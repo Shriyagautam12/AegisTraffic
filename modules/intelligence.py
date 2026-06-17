@@ -11,6 +11,7 @@ from modules.data_pipeline import (
     get_corridor_stats,
     get_junction_stats,
     get_temporal_risk_matrix,
+    norm_cat,
 )
 
 # ── Chronic chokepoint threshold ───────────────────────────────────────────────
@@ -45,13 +46,15 @@ class TrafficIntelligenceEngine:
         self._junction_stats  = get_junction_stats(self.df)
         self._temporal_matrix = get_temporal_risk_matrix(self.df)
 
-        # Fast O(1) lookup dicts
-        self._corridor_lookup = dict(
-            zip(
+        # Fast O(1) lookup dicts — keyed by normalized corridor name so
+        # "Mysore Road" and "mysore road" resolve to the same value.
+        self._corridor_lookup = {
+            norm_cat(c): v
+            for c, v in zip(
                 self._corridor_stats["corridor"],
                 self._corridor_stats["corridor_risk_index"],
             )
-        )
+        }
         self._junction_lookup = dict(
             zip(
                 self._junction_stats["junction"],
@@ -86,8 +89,9 @@ class TrafficIntelligenceEngine:
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def get_corridor_risk(self, corridor: str) -> float:
-        """Return risk index (0–1) for a named corridor. Default 0.3 if unknown."""
-        return self._corridor_lookup.get(corridor, 0.3)
+        """Return risk index (0–1) for a named corridor. Case-insensitive.
+        Default 0.3 if unknown."""
+        return self._corridor_lookup.get(norm_cat(corridor), 0.3)
 
     def get_junction_hotspot_score(self, junction: str) -> float:
         """Return hotspot score (0–1) for a named junction. Default 0.2 if unknown."""

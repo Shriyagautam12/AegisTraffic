@@ -10,6 +10,17 @@ from pathlib import Path
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "dataset.xlsx"
 
+
+def norm_cat(value):
+    """
+    Normalize a categorical string: strip whitespace + lowercase.
+    Makes all category matching case-insensitive and whitespace-robust.
+    Returns None for null/NaN so downstream .map() yields NaN cleanly.
+    """
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    return str(value).strip().lower()
+
 # ── Severity thresholds ────────────────────────────────────────────────────────
 HIGH_CLOSURE_MINS   = 120   # > 2 hours → High
 MEDIUM_CLOSURE_MINS = 40    # 40–120 min → Medium
@@ -81,6 +92,13 @@ VEH_RISK_SCORE = {
     "others":        1,
 }
 
+# ── Case-insensitive lookup variants (keyed by norm_cat output) ───────────────
+# These are the dicts actually used at runtime. norm_cat() lowercases + strips,
+# so every key here is lowercased to guarantee case-insensitive matching.
+CAUSE_SEVERITY_SCORE_NORM = {norm_cat(k): v for k, v in CAUSE_SEVERITY_SCORE.items()}
+CORRIDOR_RISK_TIER_NORM   = {norm_cat(k): v for k, v in CORRIDOR_RISK_TIER.items()}
+VEH_RISK_SCORE_NORM       = {norm_cat(k): v for k, v in VEH_RISK_SCORE.items()}
+
 
 def _assign_severity(row: pd.Series) -> str:
     """Derive severity label from available fields."""
@@ -134,25 +152,31 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
     # ── Severity label ────────────────────────────────────────────────────────
     df["severity"] = df.apply(_assign_severity, axis=1)
 
-    # ── Encoded / scored features ─────────────────────────────────────────────
-    df["cause_score"]    = df["event_cause"].map(CAUSE_SEVERITY_SCORE).fillna(1)
-    df["corridor_tier"]  = df["corridor"].map(CORRIDOR_RISK_TIER).fillna(1)
-    df["veh_risk"]       = df["veh_type"].map(VEH_RISK_SCORE).fillna(1)
-    df["priority_num"]   = (df["priority"] == "High").astype(int)
+    # ── Normalize categoricals FIRST (case-insensitive, whitespace-robust) ────
+    # event_cause is fully normalized (lowercased) because it has known casing
+    # dupes (Debris/debris) and is only ever used as a code/key, never displayed
+    # as a proper noun. corridor/zone/veh_type keep their original display case
+    # but get a hidden _norm helper column used for all matching/encoding.
+    df["event_cause"] = df["event_cause"].map(norm_cat)
+    df["event_cause"] = df["event_cause"].replace(
+        {"fog / low visibility": "fog_low_visibility"}
+    )
+
+    for col in ["corridor", "zone", "veh_type", "police_station", "event_type"]:
+        df[f"{col}_norm"] = df[col].map(norm_cat)
+
+    # ── Scored features (use normalized lookup dicts → case-insensitive) ──────
+    df["cause_score"]      = df["event_cause"].map(CAUSE_SEVERITY_SCORE_NORM).fillna(1)
+    df["corridor_tier"]    = df["corridor_norm"].map(CORRIDOR_RISK_TIER_NORM).fillna(1)
+    df["veh_risk"]         = df["veh_type_norm"].map(VEH_RISK_SCORE_NORM).fillna(1)
+    df["priority_num"]     = (df["priority"] == "High").astype(int)
     df["road_closure_num"] = df["requires_road_closure"].astype(int)
 
-    # Label-encode key categoricals (keep originals intact)
-    for col in ["event_cause", "corridor", "zone", "veh_type",
-                "police_station", "event_type"]:
-        df[f"{col}_enc"] = df[col].astype("category").cat.codes
-
-    # ── Clean known data issues ───────────────────────────────────────────────
-    # Normalize cause casing (Debris / debris → debris)
-    df["event_cause"] = df["event_cause"].str.strip().str.lower()
-    df["event_cause"] = df["event_cause"].replace({"fog / low visibility": "fog_low_visibility"})
-    # Recompute cause_score after normalisation
-    CAUSE_SEVERITY_SCORE_LOWER = {k.lower(): v for k, v in CAUSE_SEVERITY_SCORE.items()}
-    df["cause_score"] = df["event_cause"].map(CAUSE_SEVERITY_SCORE_LOWER).fillna(1)
+    # ── Label-encode on normalized values (codes now case-consistent) ─────────
+    # event_cause is already normalized; others use their _norm helper column.
+    df["event_cause_enc"] = df["event_cause"].astype("category").cat.codes
+    for col in ["corridor", "zone", "veh_type", "police_station", "event_type"]:
+        df[f"{col}_enc"] = df[f"{col}_norm"].astype("category").cat.codes
 
     # ── Log-transformed duration (for regression) ─────────────────────────────
     df["log_closure_mins"] = np.log1p(df["closure_mins"])
@@ -164,6 +188,8 @@ def get_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     """
     Return the ML-ready feature matrix.
     Rows with no start_datetime are dropped.
+    Injects corridor_risk_index (from get_corridor_stats) as a feature so the
+    ML model sees each corridor's historical risk, not just its label code.
     """
     feature_cols = [
         "cause_score",
@@ -178,13 +204,27 @@ def get_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
         "is_weekend",
         "is_planned",
         "planned_duration_hrs",
+        "corridor_risk_index",
         "event_cause_enc",
         "corridor_enc",
         "zone_enc",
         "veh_type_enc",
     ]
     df_feat = df.dropna(subset=["start_datetime"]).copy()
-    return df_feat[feature_cols + ["severity", "closure_mins", "log_closure_mins", "id"]].reset_index(drop=True)
+
+    # Inject corridor_risk_index via lookup from corridor stats
+    corridor_stats = get_corridor_stats(df)
+    risk_lookup = dict(
+        zip(corridor_stats["corridor"], corridor_stats["corridor_risk_index"])
+    )
+    df_feat["corridor_risk_index"] = (
+        df_feat["corridor"].map(risk_lookup).fillna(0.3)
+    )
+
+    keep_cols = feature_cols + [
+        "severity", "closure_mins", "log_closure_mins", "id", "start_datetime"
+    ]
+    return df_feat[keep_cols].reset_index(drop=True)
 
 
 def get_severity_counts(df: pd.DataFrame) -> dict:
