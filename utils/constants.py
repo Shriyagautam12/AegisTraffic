@@ -10,7 +10,9 @@ ROOT_DIR    = Path(__file__).parent.parent
 MODELS_DIR  = ROOT_DIR / "models"
 DATA_DIR    = ROOT_DIR / "data"
 
-SEVERITY_MODEL_PATH = MODELS_DIR / "severity_clf.joblib"
+TRIAGE_MODEL_PATH   = MODELS_DIR / "triage_clf.joblib"          # Low vs not-Low (90% triage filter)
+BINARY_MODEL_PATH   = MODELS_DIR / "impact_binary_clf.joblib"   # High vs not-High (critical detection)
+SEVERITY_MODEL_PATH = MODELS_DIR / "severity_clf.joblib"        # 3-class (resource detail)
 DURATION_MODEL_PATH = MODELS_DIR / "duration_reg.joblib"
 ENCODERS_PATH       = MODELS_DIR / "encoders.joblib"
 METADATA_PATH       = MODELS_DIR / "model_metadata.joblib"

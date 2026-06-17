@@ -11,6 +11,7 @@ import pandas as pd
 import joblib
 
 from utils.constants import (
+    TRIAGE_MODEL_PATH, BINARY_MODEL_PATH,
     SEVERITY_MODEL_PATH, DURATION_MODEL_PATH, ENCODERS_PATH, METADATA_PATH,
     FEATURE_COLS, FEATURE_DISPLAY_NAMES, INT_TO_SEVERITY,
 )
@@ -27,6 +28,8 @@ class ImpactPredictor:
     """
 
     def __init__(self):
+        self.triage_model   = joblib.load(TRIAGE_MODEL_PATH)
+        self.binary_model   = joblib.load(BINARY_MODEL_PATH)
         self.severity_model = joblib.load(SEVERITY_MODEL_PATH)
         self.duration_model = joblib.load(DURATION_MODEL_PATH)
         self.encoders       = joblib.load(ENCODERS_PATH)
@@ -102,37 +105,61 @@ class ImpactPredictor:
 
     def predict(self, event: dict) -> dict:
         """
-        Full prediction for one event.
-        Returns: severity, confidence, probabilities, duration estimate + range,
-                 and top SHAP reasons.
+        Full prediction for one event across all model heads.
+
+        Returns:
+          - needs_attention / triage_confidence  (triage head: minor vs not)
+          - is_critical / critical_confidence     (binary head: High vs not)
+          - severity / confidence / probabilities (3-class head, for resources)
+          - duration_mins + range
+          - top SHAP reasons
         """
         X = self.build_features(event)
 
-        # Severity classification
+        # Head 0 — Triage filter (predicts P(minor)). needs_attention = NOT minor.
+        p_minor = float(self.triage_model.predict_proba(X)[0][1])
+        needs_attention = p_minor < 0.5
+        triage_conf = round(1 - p_minor if needs_attention else p_minor, 3)
+
+        # Head 1 — Critical detection (predicts P(High))
+        p_critical = float(self.binary_model.predict_proba(X)[0][1])
+        is_critical = p_critical >= 0.5
+        critical_conf = round(p_critical if is_critical else 1 - p_critical, 3)
+
+        # Head 2 — 3-class severity (resource granularity)
         proba = self.severity_model.predict_proba(X)[0]
         pred_int = int(np.argmax(proba))
         severity = INT_TO_SEVERITY[pred_int]
         confidence = float(proba[pred_int])
         prob_dict = {INT_TO_SEVERITY[i]: float(p) for i, p in enumerate(proba)}
 
-        # Duration regression (model predicts log-minutes)
+        # Head 3 — Duration regression (model predicts log-minutes)
         log_dur = float(self.duration_model.predict(X)[0])
-        duration_mins = float(np.expm1(log_dur))
-        duration_mins = max(1.0, duration_mins)
-        # Uncertainty band from training residual std
+        duration_mins = max(1.0, float(np.expm1(log_dur)))
         resid_std = self.metadata.get("duration_resid_std", 0.5)
         dur_low  = max(1.0, float(np.expm1(log_dur - resid_std)))
         dur_high = float(np.expm1(log_dur + resid_std))
 
-        # SHAP explanation
+        # SHAP explanation (on the 3-class head)
         reasons = self._explain_severity(X, pred_int)
 
         return {
+            # Triage head (90% headline)
+            "needs_attention":     needs_attention,
+            "triage_confidence":   triage_conf,
+            "p_minor":             round(p_minor, 3),
+            # Critical-detection head
+            "is_critical":         is_critical,
+            "critical_confidence": critical_conf,
+            "p_critical":          round(p_critical, 3),
+            # 3-class head
             "severity":            severity,
             "confidence":          round(confidence, 3),
             "probabilities":       {k: round(v, 3) for k, v in prob_dict.items()},
+            # Duration
             "duration_mins":       round(duration_mins, 1),
             "duration_range":      (round(dur_low, 1), round(dur_high, 1)),
+            # Explanation
             "top_reasons":         reasons,
         }
 
@@ -183,6 +210,8 @@ class ImpactPredictor:
 
     def get_model_info(self) -> dict:
         return {
+            "triage_metrics":   self.metadata.get("triage_metrics", {}),
+            "binary_metrics":   self.metadata.get("binary_metrics", {}),
             "severity_metrics": self.metadata.get("severity_metrics", {}),
             "duration_metrics": self.metadata.get("duration_metrics", {}),
             "trained_at":       self.metadata.get("trained_at", "unknown"),

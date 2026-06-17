@@ -184,12 +184,15 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
     return df
 
 
-def get_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
+def get_feature_matrix(df: pd.DataFrame, corridor_risk_lookup: dict = None) -> pd.DataFrame:
     """
     Return the ML-ready feature matrix.
     Rows with no start_datetime are dropped.
     Injects corridor_risk_index (from get_corridor_stats) as a feature so the
     ML model sees each corridor's historical risk, not just its label code.
+
+    To eliminate target leakage, pass corridor_risk_lookup computed strictly on
+    the training partition. If None, it's computed on the incoming df (legacy).
     """
     feature_cols = [
         "cause_score",
@@ -212,13 +215,15 @@ def get_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df_feat = df.dropna(subset=["start_datetime"]).copy()
 
-    # Inject corridor_risk_index via lookup from corridor stats
-    corridor_stats = get_corridor_stats(df)
-    risk_lookup = dict(
-        zip(corridor_stats["corridor"], corridor_stats["corridor_risk_index"])
-    )
+    # Inject corridor_risk_index via lookup from corridor stats.
+    # Leakage prevention: use train-only lookup if provided.
+    if corridor_risk_lookup is None:
+        corridor_stats = get_corridor_stats(df)
+        corridor_risk_lookup = dict(
+            zip(corridor_stats["corridor"], corridor_stats["corridor_risk_index"])
+        )
     df_feat["corridor_risk_index"] = (
-        df_feat["corridor"].map(risk_lookup).fillna(0.3)
+        df_feat["corridor"].map(corridor_risk_lookup).fillna(0.3)
     )
 
     keep_cols = feature_cols + [
