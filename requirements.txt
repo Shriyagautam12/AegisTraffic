@@ -1,0 +1,17 @@
+pandas
+numpy
+openpyxl
+scikit-learn
+lightgbm
+xgboost
+catboost
+shap
+folium
+streamlit
+streamlit-folium
+plotly
+joblib
+google-generativeai
+sentence-transformers
+faiss-cpu
+python-dotenv
