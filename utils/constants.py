@@ -17,6 +17,9 @@ DURATION_MODEL_PATH = MODELS_DIR / "duration_reg.joblib"
 ENCODERS_PATH       = MODELS_DIR / "encoders.joblib"
 METADATA_PATH       = MODELS_DIR / "model_metadata.joblib"
 
+# Post-event learning store (Module 7)
+LEARNING_DB_PATH    = DATA_DIR / "learning_log.db"
+
 # ── ML feature set (must match data_pipeline.get_feature_matrix) ───────────────
 FEATURE_COLS = [
     "cause_score",
