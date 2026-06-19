@@ -5,11 +5,13 @@ import sqlite3
 import pandas as pd
 import plotly.graph_objects as go
 
-from app_core import inject_theme, get_engines, section, metric_card
+from app_core import inject_theme, get_engines, section, metric_card, sidebar_brand
 from utils.constants import LEARNING_DB_PATH
 
 st.set_page_config(page_title="Learning Loop — AegisTraffic", page_icon="📈", layout="wide")
 inject_theme()
+with st.sidebar:
+    sidebar_brand()
 
 engines = get_engines()
 learning = engines["learning"]

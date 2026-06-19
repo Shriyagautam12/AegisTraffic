@@ -4,11 +4,13 @@ import streamlit as st
 import plotly.express as px
 from streamlit_folium import st_folium
 
-from app_core import inject_theme, get_engines, section, metric_card
+from app_core import inject_theme, get_engines, section, metric_card, sidebar_brand, activity_gauge
 from modules import visualizer as viz
 
 st.set_page_config(page_title="Risk Intelligence — AegisTraffic", page_icon="🗺️", layout="wide")
 inject_theme()
+with st.sidebar:
+    sidebar_brand()
 
 engines = get_engines()
 intel = engines["intel"]
@@ -23,25 +25,30 @@ junctions = intel.get_top_junctions(50)
 # ── Controls ─────────────────────────────────────────────────────────────────
 left, right = st.columns([3, 1])
 with right:
-    section("Live Risk Now")
+    section("Activity Level Now")
     import datetime
     now = datetime.datetime.now()
-    risk_now = intel.get_risk_right_now(hour=now.hour, day_of_week=now.weekday())
-    color = "#fca5a5" if risk_now > 0.5 else "#fcd34d" if risk_now > 0.2 else "#86efac"
-    st.markdown(metric_card(f"{risk_now*100:.0f}%", f"Risk · {now.strftime('%a %H:%M')}", color), unsafe_allow_html=True)
+    act = intel.get_activity_level(hour=now.hour, day_of_week=now.weekday())
+    st.markdown(
+        activity_gauge(act["pct_of_peak"], act["level"], when=now.strftime("%a %H:%M")),
+        unsafe_allow_html=True,
+    )
     st.write("")
     layer = st.radio("Map layer", ["Heatmap + Pins", "Heatmap only", "Junction pins only"], index=0)
-    show_chronic = st.checkbox("Highlight chronic chokepoints", value=True)
+    show_chronic = st.checkbox("⚠️ Show chronic chokepoints", value=True)
 
 with left:
     section("Bengaluru Incident Map")
+    chronic_df = intel.get_chronic_chokepoints() if show_chronic else None
     if layer == "Heatmap only":
-        fmap = viz.incident_heatmap(incidents)
+        fmap = viz.incident_heatmap(incidents, chronic_df=chronic_df)
     elif layer == "Junction pins only":
-        fmap = viz.junction_risk_map(junctions)
+        fmap = viz.junction_risk_map(junctions, chronic_df=chronic_df)
     else:
-        fmap = viz.combined_risk_map(incidents, junctions)
+        fmap = viz.combined_risk_map(incidents, junctions, chronic_df=chronic_df)
     st_folium(fmap, height=520, width=None, returned_objects=[])
+    if show_chronic:
+        st.caption("📍 Red pins = chronic chokepoints (median clearance > 200 min).")
 
 st.write("")
 
@@ -77,11 +84,22 @@ with c2:
     st.plotly_chart(fig2, use_container_width=True)
 
 # ── Chronic chokepoints table ────────────────────────────────────────────────
-if show_chronic:
-    section("⚠️ Chronic Chokepoints (median clearance > 200 min)")
-    chronic = intel.get_chronic_chokepoints().head(12)[
-        ["junction", "incident_count", "median_closure_mins"]
-    ].copy()
-    chronic["median_closure_mins"] = chronic["median_closure_mins"].round(0).astype(int)
-    chronic.columns = ["Junction", "Incidents", "Median Clearance (min)"]
-    st.dataframe(chronic, use_container_width=True, hide_index=True)
+def _fmt_hhmmss(minutes):
+    """Format minutes as '92d 13h 51m 06s' (days shown only when > 24h)."""
+    if minutes is None or minutes != minutes:   # None / NaN
+        return "—"
+    total_secs = int(round(float(minutes) * 60))
+    days, rem = divmod(total_secs, 86400)
+    h, rem = divmod(rem, 3600)
+    m, s = divmod(rem, 60)
+    if days > 0:
+        return f"{days}d {h:02d}h {m:02d}m {s:02d}s"
+    return f"{h:02d}h {m:02d}m {s:02d}s"
+
+section("⚠️ Chronic Chokepoints (median clearance > 200 min)")
+chronic = intel.get_chronic_chokepoints().head(12)[
+    ["junction", "incident_count", "median_closure_mins"]
+].copy()
+chronic["median_closure_mins"] = chronic["median_closure_mins"].apply(_fmt_hhmmss)
+chronic.columns = ["Junction", "Incidents", "Median Clearance"]
+st.dataframe(chronic, use_container_width=True, hide_index=True)

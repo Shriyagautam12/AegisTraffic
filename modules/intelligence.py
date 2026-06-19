@@ -128,6 +128,37 @@ class TrafficIntelligenceEngine:
         except KeyError:
             return 0.0
 
+    def get_city_peak_hour(self) -> int:
+        """Hour of day with the highest city-wide historical incident activity."""
+        hourly = self._temporal_matrix.sum(axis=1)   # sum across days, per hour
+        return int(hourly.idxmax())
+
+    def get_activity_level(self, hour: int, day_of_week: int) -> dict:
+        """
+        City-wide historical activity for a given hour/day, expressed as a % of
+        the busiest hour-of-day. Returns label + pct-of-peak + busiest hour.
+        This is a TEMPORAL PATTERN indicator (likelihood of incident reports at
+        this time), not a live danger score.
+        """
+        hourly = self._temporal_matrix.sum(axis=1)
+        peak_val = float(hourly.max())
+        peak_hour = int(hourly.idxmax())
+        cur_val = float(hourly.get(hour, 0.0))
+        pct_of_peak = (cur_val / peak_val) if peak_val > 0 else 0.0
+
+        if pct_of_peak >= 0.66:
+            level = "HIGH"
+        elif pct_of_peak >= 0.33:
+            level = "MODERATE"
+        else:
+            level = "LOW"
+
+        return {
+            "level": level,
+            "pct_of_peak": round(pct_of_peak, 3),
+            "peak_hour": peak_hour,
+        }
+
     def get_peak_hours_for_corridor(self, corridor: str, top_n: int = 3) -> list:
         """
         Returns the top N hours with most incidents on a given corridor.

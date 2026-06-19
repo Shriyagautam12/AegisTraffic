@@ -4,7 +4,7 @@ Home / Command Overview page. Run:  streamlit run app.py
 """
 
 import streamlit as st
-from app_core import inject_theme, get_engines, metric_card, section
+from app_core import inject_theme, get_engines, metric_card, section, sidebar_brand
 
 st.set_page_config(
     page_title="AegisTraffic — Command Copilot",
@@ -13,6 +13,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 inject_theme()
+with st.sidebar:
+    sidebar_brand()
 
 engines = get_engines()
 intel = engines["intel"]

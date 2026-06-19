@@ -1,10 +1,12 @@
 """Page 3 — AI Copilot: natural-language traffic command assistant (Gemini + RAG)."""
 
 import streamlit as st
-from app_core import inject_theme, get_engines, section
+from app_core import inject_theme, get_engines, section, sidebar_brand
 
 st.set_page_config(page_title="AI Copilot — AegisTraffic", page_icon="💬", layout="wide")
 inject_theme()
+with st.sidebar:
+    sidebar_brand()
 
 engines = get_engines()
 copilot = engines["copilot"]

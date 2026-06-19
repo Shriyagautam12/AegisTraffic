@@ -1,14 +1,3 @@
-"""
-Module 4 — Resource Recommendation Engine
-Turns a prediction (severity / cause / corridor / vehicle / road-closure) into a
-concrete, data-grounded deployment plan: officers, barricades, tow vehicles,
-WHICH junctions to deploy at, and WHICH police station owns the corridor.
-
-Design principle: every number is traceable. Officer counts come from a
-transparent formula; deployment junctions and the owning police station come
-from the ACTUAL historical incident data (not invented).
-"""
-
 import json
 import math
 import urllib.request
@@ -20,24 +9,73 @@ from modules.data_pipeline import load_data, norm_cat
 OSRM_BASE = "http://router.project-osrm.org/route/v1/driving"
 OSRM_TIMEOUT = 5  # seconds
 
-# ── Officer formula ─────────────────────────────────────────────────────────────
-# base by severity, scaled by corridor class, plus a road-closure bonus.
-BASE_OFFICERS = {"High": 4, "Medium": 2, "Low": 1}
 
-# Corridor class multiplier — CBD (dense core) needs more bodies per incident
-CBD_CORRIDORS = {"cbd 1", "cbd 2"}
-ORR_PREFIX    = "orr"   # outer ring road corridors
+EVENT_TIERS = {
+    "vip_movement":      {"officers": 60, "barricades": 120, "tow": 4, "k9": True,  "pilots": True},
+    "protest":           {"officers": 40, "barricades": 60,  "tow": 1, "reserve": True},
+    "public_event":      {"officers": 30, "barricades": 60,  "tow": 2, "crowd": True},
+    "procession":        {"officers": 25, "barricades": 35,  "tow": 1, "crowd": True},
+    "accident":          {"officers": 6,  "barricades": 6,   "tow": 2, "ambulance": True},
+    "construction":      {"officers": 4,  "barricades": 8,   "tow": 1},
+    "tree_fall":         {"officers": 5,  "barricades": 3,   "tow": 1},
+    "water_logging":     {"officers": 5,  "barricades": 4,   "tow": 1},
+    "pot_holes":         {"officers": 3,  "barricades": 2,   "tow": 0},
+    "road_conditions":   {"officers": 3,  "barricades": 2,   "tow": 0},
+    "debris":            {"officers": 3,  "barricades": 2,   "tow": 1},
+    "congestion":        {"officers": 4,  "barricades": 2,   "tow": 0},
+    "vehicle_breakdown": {"officers": 2,  "barricades": 0,   "tow": 1},
+    "others":            {"officers": 3,  "barricades": 2,   "tow": 0},
+}
+DEFAULT_TIER = {"officers": 3, "barricades": 2, "tow": 0}
 
-ROAD_CLOSURE_OFFICER_BONUS = 2
+# ── Scaling multipliers ──────────────────────────────────────────────────────────
+SEVERITY_SCALE = {"High": 1.0, "Medium": 0.6, "Low": 0.35}
+CBD_CORRIDORS  = {"cbd 1", "cbd 2"}
+ORR_PREFIX     = "orr"
+CORRIDOR_SCALE = {"cbd": 1.30, "orr": 1.15, "standard": 1.00}
+PEAK_SCALE     = 1.15
+PRIORITY_SCALE = 1.15
 
-# ── Tow vehicle rules ───────────────────────────────────────────────────────────
+# Peak windows (must match data_pipeline.PEAK_HOURS): 4-7 AM, 7-10 PM
+PEAK_HOURS_SET = {4, 5, 6, 7, 19, 20, 21, 22}
+
+# Duration → relief-shift multiplier (long events need rotating personnel).
+# A standard police shift is ~8h; events spanning multiple shifts need relief.
+def duration_multiplier(hours: float) -> tuple:
+    if hours >= 8:
+        return 1.6, "≥8h (3 shifts) ×1.6"
+    if hours >= 4:
+        return 1.3, "4–8h (relief shift) ×1.3"
+    if hours >= 2:
+        return 1.1, "2–4h ×1.1"
+    return 1.0, "<2h ×1.0"
+
+
+def event_touches_peak(start_hour: int, duration_hrs: float) -> bool:
+    """True if the event window [start, start+duration) overlaps any peak hour."""
+    span = int(max(1, round(duration_hrs)))
+    for h in range(start_hour, start_hour + span):
+        if (h % 24) in PEAK_HOURS_SET:
+            return True
+    return False
+
+# ── Vehicle classes for tow type ─────────────────────────────────────────────────
 HEAVY_VEH = {"heavy_vehicle", "truck", "bmtc_bus", "ksrtc_bus"}
 MED_VEH   = {"lcv", "private_bus"}
 
-# ── Causes that imply specific equipment ────────────────────────────────────────
-TREE_CAUSES   = {"tree_fall"}
-WATER_CAUSES  = {"water_logging"}
-DEBRIS_CAUSES = {"debris", "pot_holes", "road_conditions"}
+# ── Cause-specific special equipment ─────────────────────────────────────────────
+SPECIAL_EQUIPMENT = {
+    "tree_fall":       ["Tree-cutting crew + log crane"],
+    "water_logging":   ["High-capacity de-watering pumps"],
+    "pot_holes":       ["Debris loader + asphalt patch kit"],
+    "road_conditions": ["Debris loader + asphalt patch kit"],
+    "debris":          ["Debris-clearing crew"],
+    "vip_movement":    ["K9 sweep units", "Pilot/escort vehicles"],
+    "protest":         ["KSRP/CAR reserve platoon", "Water-cannon standby"],
+    "public_event":    ["Crowd-control barriers", "Ambulance coordination"],
+    "procession":      ["Route marshals", "Crowd-control barriers"],
+    "accident":        ["Ambulance coordination"],
+}
 
 
 class ResourceRecommender:
@@ -87,59 +125,33 @@ class ResourceRecommender:
                 out[corridor] = counts.index[0]
         return out
 
-    # ── Core recommendation ─────────────────────────────────────────────────────
+    # ── Core recommendation — event-type tiers + deterministic scaling ──────────
 
-    def _officer_count(self, severity: str, corridor_norm: str,
-                       road_closure: bool) -> tuple:
-        """Return (count, breakdown_string) — fully traceable."""
-        base = BASE_OFFICERS.get(severity, 1)
-
+    @staticmethod
+    def _corridor_factor(corridor_norm: str) -> tuple:
         if corridor_norm in CBD_CORRIDORS:
-            mult, mult_label = 1.5, "CBD x1.5"
-        elif corridor_norm.startswith(ORR_PREFIX):
-            mult, mult_label = 1.25, "ORR x1.25"
-        else:
-            mult, mult_label = 1.0, "standard x1.0"
+            return CORRIDOR_SCALE["cbd"], "CBD ×1.30"
+        if corridor_norm.startswith(ORR_PREFIX):
+            return CORRIDOR_SCALE["orr"], "ORR ×1.15"
+        return CORRIDOR_SCALE["standard"], "standard ×1.00"
 
-        count = round(base * mult)
-        parts = [f"{base} base ({severity})", mult_label]
-        if road_closure:
-            count += ROAD_CLOSURE_OFFICER_BONUS
-            parts.append(f"+{ROAD_CLOSURE_OFFICER_BONUS} road-closure")
-        breakdown = " · ".join(parts) + f" = {count}"
-        return count, breakdown
-
-    def _tow_vehicles(self, veh_type: str, severity: str) -> int:
+    def _tow_class(self, veh_type: str, severity: str, base_tow: int, cause: str) -> str:
+        if base_tow <= 0:
+            return "None"
+        # Large managed events keep heavy recovery fleet on standby regardless of veh_type
+        if cause in {"vip_movement", "public_event", "protest", "procession"}:
+            return "Heavy-duty recovery fleet (standby)"
         if veh_type in HEAVY_VEH:
-            return 1
+            return "Heavy-duty recovery vehicle"
         if veh_type in MED_VEH and severity == "High":
-            return 1
-        return 0
-
-    def _barricades(self, severity: str, road_closure: bool) -> int:
-        if road_closure:
-            return 2
-        if severity == "High":
-            return 1
-        return 0
-
-    def _special_equipment(self, cause: str) -> list:
-        eq = []
-        if cause in TREE_CAUSES:
-            eq.append("Tree-cutting crew + crane")
-        if cause in WATER_CAUSES:
-            eq.append("Water pump / de-watering unit")
-        if cause in DEBRIS_CAUSES:
-            eq.append("Debris-clearing crew")
-        return eq
+            return "Medium-duty utility tow"
+        return "Light flatbed tow truck"
 
     def recommend(self, event: dict, severity: str = None) -> dict:
         """
-        Build the full deployment plan.
-
-        event keys used: event_cause, corridor, veh_type, requires_road_closure
-        severity: pass the model's predicted severity (High/Medium/Low).
-                  If None, defaults to Medium.
+        Build a full deployment plan from event-type tiers, scaled by severity,
+        corridor density, peak hour and priority. No LLM — fully deterministic
+        and traceable. Per-junction figures plus corridor-aggregated totals.
         """
         severity      = severity or "Medium"
         corridor_disp = event.get("corridor") or "Non-corridor"
@@ -147,33 +159,88 @@ class ResourceRecommender:
         cause         = norm_cat(event.get("event_cause")) or "others"
         veh_type      = norm_cat(event.get("veh_type")) or "others"
         road_closure  = bool(event.get("requires_road_closure"))
+        priority      = event.get("priority", "Low")
+        start_hour    = int(event.get("hour", 12))
+        duration_hrs  = float(event.get("duration_hrs", 1) or 1)
 
-        officers, officer_breakdown = self._officer_count(
-            severity, corridor_norm, road_closure
+        # Peak now derived from whether the event WINDOW overlaps a rush hour
+        is_peak = event_touches_peak(start_hour, duration_hrs)
+
+        tier = EVENT_TIERS.get(cause, DEFAULT_TIER)
+
+        # Severity scales the base fully; the situational factors (corridor, peak,
+        # priority) only ADD a bounded uplift so large-base events don't balloon.
+        sev_f = SEVERITY_SCALE.get(severity, 0.6)
+        cor_f, cor_lbl = self._corridor_factor(corridor_norm)
+        peak_f = PEAK_SCALE if is_peak else 1.0
+        prio_f = PRIORITY_SCALE if priority == "High" else 1.0
+        # uplift = combined situational bonus, capped at +40%
+        uplift = min(1.40, cor_f * peak_f * prio_f)
+
+        # Duration multiplier — applied SEPARATELY (relief shifts), not capped,
+        # because a longer event genuinely needs more total personnel to rotate.
+        dur_f, dur_lbl = duration_multiplier(duration_hrs)
+
+        mult = sev_f * uplift * dur_f
+
+        # Per-junction resources
+        officers   = max(1, math.ceil(tier["officers"] * mult))
+        # barricades are physical infra — they don't rotate, so duration doesn't
+        # multiply them (you don't need more barricades for a longer event).
+        barricades = max(0, round(tier["barricades"] * sev_f * uplift))
+        base_tow   = tier["tow"]
+        # closure on a normally tow-less event still needs 1 recovery vehicle
+        if base_tow == 0 and road_closure:
+            base_tow = 1
+        tow_count  = base_tow
+        tow_class  = self._tow_class(veh_type, severity, tow_count, cause)
+
+        # Support vehicles (friend's logic)
+        patrol_jeeps = max(1, officers // 10) if officers >= 4 else 0
+        command_vans = 2 if cause == "vip_movement" else (1 if (severity == "High" and road_closure) else 0)
+
+        # Special equipment by cause
+        equipment = list(SPECIAL_EQUIPMENT.get(cause, []))
+
+        officer_breakdown = (
+            f"{tier['officers']} base ({cause}) · {severity} ×{sev_f} · "
+            f"{cor_lbl} · {'peak ×1.15 · ' if is_peak else ''}"
+            f"{'priority ×1.15 · ' if priority=='High' else ''}"
+            f"duration {dur_lbl} · ≈ {officers}/junction"
         )
-        tow        = self._tow_vehicles(veh_type, severity)
-        barricades = self._barricades(severity, road_closure)
-        equipment  = self._special_equipment(cause)
+        shift_rotation = duration_hrs >= 4   # event spans multiple police shifts
 
-        # Data-grounded deployment locations
+        # Deployment junctions + corridor-aggregated totals
         junctions = self._corridor_junctions.get(corridor_norm, [])
-        # how many deployment points scale with severity
         n_points = {"High": 3, "Medium": 2, "Low": 1}.get(severity, 1)
         deploy_at = junctions[:n_points] if junctions else ["(no named junction on record — deploy at incident point)"]
+        n_deploy = len(deploy_at)
 
         station = self._corridor_station.get(corridor_norm, "Nearest available station")
 
         return {
-            "severity":          severity,
-            "officers":          officers,
-            "officer_breakdown": officer_breakdown,
-            "barricades":        barricades,
-            "tow_vehicles":      tow,
-            "special_equipment": equipment,
-            "deploy_at":         deploy_at,
-            "primary_junction":  deploy_at[0] if deploy_at else None,
-            "owning_station":    station,
-            "road_closure":      road_closure,
+            "severity":            severity,
+            # per-junction
+            "officers":            officers,
+            "barricades":          barricades,
+            "tow_vehicles":        tow_count,
+            "tow_class":           tow_class,
+            "patrol_jeeps":        patrol_jeeps,
+            "command_vans":        command_vans,
+            "officer_breakdown":   officer_breakdown,
+            "special_equipment":   equipment,
+            "duration_hrs":        duration_hrs,
+            "shift_rotation":      shift_rotation,
+            "is_peak":             is_peak,
+            # corridor totals (across all deployment junctions)
+            "n_deploy_points":     n_deploy,
+            "total_officers":      officers * n_deploy,
+            "total_barricades":    barricades * n_deploy,
+            # locations
+            "deploy_at":           deploy_at,
+            "primary_junction":    deploy_at[0] if deploy_at else None,
+            "owning_station":      station,
+            "road_closure":        road_closure,
         }
 
     # ── Diversion routing (OSRM) — OPT-IN, isolated from recommend() ────────────

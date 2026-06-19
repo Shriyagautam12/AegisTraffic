@@ -22,7 +22,7 @@ try:
 except ImportError:
     _GENAI_AVAILABLE = False
 
-GEMINI_MODEL = "gemini-3.5-flash"   # fast, low-cost; Kannada-capable
+GEMINI_MODEL = "gemini-2.5-flash"   # fast, higher free quota; Kannada-capable
 
 # Known categories for query parsing (kept in sync with the dataset)
 KNOWN_CAUSES = [
@@ -301,4 +301,104 @@ Keep it practical — an officer should be able to act on it immediately."""
                 "source":  "fallback (no api key)",
                 "context": ctx,
                 "parsed":  event,
+            }
+
+    # ── Full operational order (DCP-style plan) ─────────────────────────────────
+
+    def operational_plan(self, event: dict, prediction: dict = None) -> dict:
+        """
+        Expand a prediction into a full operational order (personnel hierarchy,
+        logistics, diversion, phased timeline) using Gemini.
+
+        Numbers are grounded in our own predictor/recommender; Gemini supplies the
+        operational STRUCTURE and Bengaluru geography (clearly flagged as advisory).
+        """
+        if prediction is None:
+            prediction = self.predictor.predict(event)
+        ctx = self.assemble_context(event)
+        plan = self.recommender.recommend(event, severity=prediction["severity"])
+
+        # Magnitude tier — VIP/large planned events need a far bigger footprint
+        cause = norm_cat(event.get("event_cause")) or ""
+        large_scale = cause in {"vip_movement", "public_event", "procession", "protest"} \
+                      and prediction["severity"] == "High"
+        scale_hint = (
+            "This is a LARGE-SCALE high-profile movement — scale personnel to "
+            "real BTP magnitude (a DCP in command, ACPs sector-wise, multiple PIs, "
+            "PSIs/ASIs, 50-70 constables, home guards, K9, Cheetah/Hoysala patrols)."
+            if large_scale else
+            "This is a routine incident — keep the footprint proportionate (a PI/PSI "
+            "lead, a handful of constables)."
+        )
+
+        if self.llm is None:
+            return {
+                "available": False,
+                "reason": "Full plan needs the Gemini API (offline mode active).",
+                "base_plan": plan,
+            }
+
+        prompt = f"""You are a Deputy Commissioner of Police (Traffic), Bengaluru.
+Produce a STRUCTURED operational order for the event below as STRICT JSON ONLY
+(no markdown, no prose, no code fences) matching the schema exactly.
+
+GROUNDED DATA from AegisTraffic (factual core — do not contradict):
+- Event: {event.get('event_cause')} on {event.get('corridor')}
+- Predicted severity: {prediction['severity']} ({int(prediction['confidence']*100)}% confidence)
+- Estimated clearance: {prediction['duration_mins']:.0f} min
+- Base resource estimate: {plan['officers']} officers, {plan['barricades']} barricade sets, {plan['tow_vehicles']} tow
+- Deploy junctions: {', '.join(plan['deploy_at'])}
+- Owning police station: {plan['owning_station']}
+- Special equipment: {', '.join(plan['special_equipment']) or 'none'}
+
+SCALING: {scale_hint}
+
+Return JSON with this EXACT schema (integers for counts; use real Bengaluru road names):
+{{
+  "summary": "one-line situation summary",
+  "personnel": {{
+    "dcp": <int>, "acp": <int>, "pi": <int>, "psi_asi": <int>,
+    "constables": <int>, "home_guards": <int>
+  }},
+  "logistics": {{
+    "barricades": <int>, "tow_cranes": <int>,
+    "patrol_bikes": <int>, "patrol_jeeps": <int>, "k9_units": <int>
+  }},
+  "diversion_legs": [
+    {{"from": "...", "via": "...", "to": "...", "for_whom": "e.g. East BLR commuters"}}
+  ],
+  "hgv_ban": "time window + holding area, or 'Not required'",
+  "timeline": [
+    {{"phase": "T-2 hrs", "label": "Pre-route clearance", "actions": "..."}},
+    {{"phase": "T-30 min", "label": "...", "actions": "..."}},
+    {{"phase": "T-5 min", "label": "...", "actions": "..."}},
+    {{"phase": "T = 0", "label": "...", "actions": "..."}},
+    {{"phase": "Post", "label": "De-escalation", "actions": "..."}}
+  ],
+  "command": "who commands + control-room coordination, one or two sentences",
+  "vms_advisory": "exact public message board copy"
+}}"""
+
+        try:
+            resp = self.llm.generate_content(prompt)
+            raw = resp.text.strip()
+            # strip accidental code fences
+            if raw.startswith("```"):
+                raw = raw.split("```", 2)[1] if "```" in raw[3:] else raw.strip("`")
+                raw = raw[4:] if raw.lower().startswith("json") else raw
+            # extract the JSON object
+            start, end = raw.find("{"), raw.rfind("}")
+            data = json.loads(raw[start:end + 1])
+            return {
+                "available": True,
+                "plan": data,
+                "source": "gemini",
+                "base_plan": plan,
+                "prediction": prediction,
+            }
+        except Exception as e:
+            return {
+                "available": False,
+                "reason": f"Gemini error: {e}",
+                "base_plan": plan,
             }

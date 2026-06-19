@@ -32,7 +32,36 @@ def _base_map(center=BLR_CENTER, zoom=DEFAULT_ZOOM) -> folium.Map:
 
 # ── Layer 1: Incident heatmap ───────────────────────────────────────────────────
 
-def incident_heatmap(incidents_df, center=BLR_CENTER, zoom=DEFAULT_ZOOM) -> folium.Map:
+def _add_chronic_pins(m, chronic_df):
+    """Overlay chronic chokepoints as red ⚠️ teardrop pins. Shared by all maps."""
+    if chronic_df is None or not len(chronic_df):
+        return
+    chronic_fg = folium.FeatureGroup(name="⚠️ Chronic chokepoints", show=True)
+    for _, r in chronic_df.iterrows():
+        if not (r.get("lat") and r.get("lon")):
+            continue
+        median = r.get("median_closure_mins")
+        if median and median >= 1440:
+            median_txt = f"{median/1440:.0f} days"
+        elif median and median >= 120:
+            median_txt = f"{median/60:.0f} hrs"
+        elif median:
+            median_txt = f"{median:.0f} min"
+        else:
+            median_txt = "n/a"
+        folium.Marker(
+            location=[r["lat"], r["lon"]],
+            tooltip=f"⚠️ CHRONIC: {r['junction']}",
+            popup=folium.Popup(
+                f"<b>⚠️ {r['junction']}</b><br>Chronic chokepoint<br>"
+                f"Incidents: {r.get('incident_count', 0)}<br>"
+                f"Median clearance: {median_txt}", max_width=260),
+            icon=folium.Icon(color="red", icon="exclamation-sign"),
+        ).add_to(chronic_fg)
+    chronic_fg.add_to(m)
+
+
+def incident_heatmap(incidents_df, chronic_df=None, center=BLR_CENTER, zoom=DEFAULT_ZOOM) -> folium.Map:
     """City-wide incident density, weighted by severity."""
     m = _base_map(center, zoom)
     heat_data = [
@@ -46,13 +75,13 @@ def incident_heatmap(incidents_df, center=BLR_CENTER, zoom=DEFAULT_ZOOM) -> foli
         gradient={0.2: "blue", 0.45: "lime", 0.65: "orange", 1.0: "red"},
         name="Incident density",
     ).add_to(m)
-    folium.LayerControl().add_to(m)
+    _add_chronic_pins(m, chronic_df)
     return m
 
 
 # ── Layer 2: Junction risk pins ─────────────────────────────────────────────────
 
-def junction_risk_map(junction_df, center=BLR_CENTER, zoom=DEFAULT_ZOOM) -> folium.Map:
+def junction_risk_map(junction_df, chronic_df=None, center=BLR_CENTER, zoom=DEFAULT_ZOOM) -> folium.Map:
     """
     Top junctions as colour-coded circles:
       red    = chronic (median closure > threshold)
@@ -87,6 +116,7 @@ def junction_risk_map(junction_df, center=BLR_CENTER, zoom=DEFAULT_ZOOM) -> foli
             color=color, fill=True, fill_color=color, fill_opacity=0.7,
             weight=1, popup=popup, tooltip=r["junction"],
         ).add_to(m)
+    _add_chronic_pins(m, chronic_df)
     return m
 
 
@@ -147,9 +177,10 @@ def diversion_map(origin, dest, diversion_plan, zoom=13) -> folium.Map:
 
 # ── Combined operational map (heatmap + junction pins) ──────────────────────────
 
-def combined_risk_map(incidents_df, junction_df,
+def combined_risk_map(incidents_df, junction_df, chronic_df=None,
                       center=BLR_CENTER, zoom=DEFAULT_ZOOM) -> folium.Map:
-    """Heatmap + junction pins in one map with layer toggles — the Page 1 hero map."""
+    """Heatmap + junction pins in one map with layer toggles — the Page 1 hero map.
+    If chronic_df is provided, overlays chronic chokepoints as large red rings."""
     m = _base_map(center, zoom)
 
     # Heat layer
@@ -188,6 +219,5 @@ def combined_risk_map(incidents_df, junction_df,
                 f"Median closure: {median_txt}", max_width=240),
         ).add_to(pin_fg)
     pin_fg.add_to(m)
-
-    folium.LayerControl(collapsed=False).add_to(m)
+    _add_chronic_pins(m, chronic_df)
     return m
