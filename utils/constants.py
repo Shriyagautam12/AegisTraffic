@@ -19,9 +19,9 @@ ENCODERS_PATH       = MODELS_DIR / "encoders.joblib"
 METADATA_PATH       = MODELS_DIR / "model_metadata.joblib"
 
 # Post-event learning store (Module 7)
-# In production (Render), DB_PATH env var points to the persistent disk mount.
-# In development it falls back to data/learning_log.db
-LEARNING_DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "learning_log.db")))
+# Force to local data dir to avoid permission errors on free tier deployments
+# where DB_PATH might be stuck pointing to an unmounted /data directory.
+LEARNING_DB_PATH = DATA_DIR / "learning_log.db"
 
 # ── ML feature set (must match data_pipeline.get_feature_matrix) ───────────────
 FEATURE_COLS = [
