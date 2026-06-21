@@ -39,10 +39,6 @@ export default function Header() {
   return (
     <header className="top-header">
       <div className="header-left">
-        <div className="live-badge">
-          <span className="live-dot"></span>
-          <span>LIVE</span>
-        </div>
         <span className="header-tagline">Bengaluru City Traffic Police</span>
       </div>
       <div className="header-right">
