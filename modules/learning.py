@@ -10,6 +10,7 @@ Storage: SQLite (single file, no server). Swap to a real DB later by changing
 only the connection in _connect().
 """
 
+import os
 import sqlite3
 import json
 from datetime import datetime, timezone
@@ -36,6 +37,8 @@ class PostEventLearning:
         self._init_db()
 
     def _connect(self):
+        # Ensure parent directory exists (critical on Render / fresh deployments)
+        os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         return sqlite3.connect(self.db_path)
 
     def _init_db(self):

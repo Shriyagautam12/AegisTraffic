@@ -17,7 +17,7 @@ from modules.data_pipeline import norm_cat
 
 # Gemini is optional at import time; only needed for the LLM phrasing step.
 try:
-    import google.generativeai as genai
+    from google import genai
     _GENAI_AVAILABLE = True
 except ImportError:
     _GENAI_AVAILABLE = False
@@ -62,8 +62,8 @@ class TrafficCopilot:
         self.llm = None
         if _GENAI_AVAILABLE and self.api_key:
             try:
-                genai.configure(api_key=self.api_key)
-                self.llm = genai.GenerativeModel(GEMINI_MODEL)
+                self._client = genai.Client(api_key=self.api_key)
+                self.llm = self._client
             except Exception:
                 self.llm = None
 
@@ -280,7 +280,10 @@ Keep it practical — an officer should be able to act on it immediately."""
         if self.llm is not None:
             try:
                 prompt = self._build_prompt(query, ctx)
-                resp = self.llm.generate_content(prompt)
+                resp = self.llm.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=prompt
+                )
                 return {
                     "answer":  resp.text,
                     "source":  "gemini",
@@ -380,7 +383,10 @@ Return JSON with this EXACT schema (integers for counts; use real Bengaluru road
 }}"""
 
         try:
-            resp = self.llm.generate_content(prompt)
+            resp = self.llm.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt
+            )
             raw = resp.text.strip()
             # strip accidental code fences
             if raw.startswith("```"):

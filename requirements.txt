@@ -1,12 +1,12 @@
 pandas
 numpy
 openpyxl
-scikit-learn
+scikit-learn==1.6.1
 lightgbm
 shap
 python-dotenv
 fastapi
 uvicorn[standard]
 python-multipart
-google-generativeai
+google-genai
 joblib
