@@ -71,6 +71,8 @@ class SimulationRequest(BaseModel):
     start_time: str  # HH:MM
     duration_hrs: float
     requires_road_closure: bool
+    event_category: Optional[str] = None
+    event_subcategory: Optional[str] = None
 
 class NarrativeRequest(BaseModel):
     event: dict
@@ -83,6 +85,11 @@ class OutcomeRequest(BaseModel):
     prediction_id: int
     actual_severity: str
     actual_duration: float
+    actual_officers: Optional[int] = None
+    actual_barricades: Optional[int] = None
+    actual_patrol_jeeps: Optional[int] = None
+    actual_tow_vehicles: Optional[int] = None
+    actual_command_vans: Optional[int] = None
 
 
 # ── REST API Endpoints ───────────────────────────────────────────────────────
@@ -173,7 +180,26 @@ def run_simulation(req: SimulationRequest):
         corridor = req.corridor
         veh = req.veh_type
         
+        category = req.event_category
+        subcategory = req.event_subcategory
+        
+        # Backward compatibility fallback
+        if not category:
+            if cause in ["public_event", "procession", "vip_movement", "protest", "construction"]:
+                category = "planned_event"
+            elif cause in ["tree_fall", "water_logging", "pot_holes"]:
+                category = "infrastructure_hazards"
+            elif cause in ["accident", "vehicle_breakdown", "congestion"]:
+                category = "traffic_incidents"
+            else:
+                category = "planned_event"
+                
+        if not subcategory:
+            subcategory = cause
+            
         event = {
+            "event_category": category,
+            "event_subcategory": subcategory,
             "event_cause": cause,
             "corridor": corridor,
             "veh_type": None if veh in ["(none)", None, ""] else veh,
@@ -184,7 +210,7 @@ def run_simulation(req: SimulationRequest):
             "start_datetime_display": f"{start_date_parsed.strftime('%a %d %b %Y')} {start_time_parsed.strftime('%H:%M')}",
             "is_peak": 1 if hour in PEAK_HOURS else 0,
             "requires_road_closure": req.requires_road_closure,
-            "is_planned": 1 if cause in ["public_event", "procession", "vip_movement", "protest", "construction"] else 0,
+            "is_planned": 1 if category == "planned_event" else 0,
             "priority": "High" if cause in ["vip_movement", "public_event"] else "Low",
         }
         
@@ -205,8 +231,8 @@ def run_simulation(req: SimulationRequest):
         # Similar precedents
         precedents = retriever.summarize_precedent(event, k=5)
         
-        # Log prediction
-        prediction_id = learning.log_prediction(event, pred)
+        # Log prediction (with resource plan so predicted resources are recorded)
+        prediction_id = learning.log_prediction(event, pred, resource_plan=rplan)
         
         # Compute diversion plan if closure is required
         from modules.data_pipeline import norm_cat
@@ -214,6 +240,8 @@ def run_simulation(req: SimulationRequest):
         if req.requires_road_closure:
             centroid = recommender._corridor_centroids.get(norm_cat(corridor))
             if centroid:
+                event["latitude"] = centroid[0]
+                event["longitude"] = centroid[1]
                 origin = (centroid[0] - 0.01, centroid[1] - 0.01)
                 dest   = (centroid[0] + 0.01, centroid[1] + 0.01)
                 dplan = recommender.diversion_plan(event, origin, dest)
@@ -285,7 +313,8 @@ def get_learning():
             "report": report,
             "corrections": corrections,
             "open_predictions": clean_df(preds),
-            "scatter_data": clean_df(scatter)
+            "scatter_data": clean_df(scatter),
+            "comparison_data": [clean_val(row) for row in learning.get_comparison_data()]
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -297,7 +326,12 @@ def record_outcome(req: OutcomeRequest):
         res = learning.record_outcome(
             req.prediction_id,
             actual_severity=req.actual_severity,
-            actual_duration_mins=req.actual_duration
+            actual_duration_mins=req.actual_duration,
+            actual_officers=req.actual_officers,
+            actual_barricades=req.actual_barricades,
+            actual_patrol_jeeps=req.actual_patrol_jeeps,
+            actual_tow_vehicles=req.actual_tow_vehicles,
+            actual_command_vans=req.actual_command_vans,
         )
         return clean_val(res)
     except Exception as e:

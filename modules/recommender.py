@@ -157,6 +157,7 @@ class ResourceRecommender:
         corridor_disp = event.get("corridor") or "Non-corridor"
         corridor_norm = norm_cat(corridor_disp) or "non-corridor"
         cause         = norm_cat(event.get("event_cause")) or "others"
+        category      = norm_cat(event.get("event_category")) or ""
         veh_type      = norm_cat(event.get("veh_type")) or "others"
         road_closure  = bool(event.get("requires_road_closure"))
         priority      = event.get("priority", "Low")
@@ -166,7 +167,17 @@ class ResourceRecommender:
         # Peak now derived from whether the event WINDOW overlaps a rush hour
         is_peak = event_touches_peak(start_hour, duration_hrs)
 
-        tier = EVENT_TIERS.get(cause, DEFAULT_TIER)
+        if cause in EVENT_TIERS:
+            tier = EVENT_TIERS[cause]
+        else:
+            if category == "planned_event":
+                tier = EVENT_TIERS.get("public_event", DEFAULT_TIER)
+            elif category == "infrastructure_hazards":
+                tier = EVENT_TIERS.get("water_logging", DEFAULT_TIER)
+            elif category == "traffic_incidents":
+                tier = EVENT_TIERS.get("congestion", DEFAULT_TIER)
+            else:
+                tier = EVENT_TIERS.get("others", DEFAULT_TIER)
 
         # Severity scales the base fully; the situational factors (corridor, peak,
         # priority) only ADD a bounded uplift so large-base events don't balloon.

@@ -55,6 +55,14 @@ class PostEventLearning:
                     features_json   TEXT
                 )
             """)
+            try:
+                con.execute("ALTER TABLE predictions ADD COLUMN event_category TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                con.execute("ALTER TABLE predictions ADD COLUMN event_subcategory TEXT")
+            except sqlite3.OperationalError:
+                pass
             con.execute("""
                 CREATE TABLE IF NOT EXISTS outcomes (
                     outcome_id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,21 +72,54 @@ class PostEventLearning:
                     actual_duration   REAL,
                     severity_correct  INTEGER,
                     duration_error    REAL,
+                    actual_officers   INTEGER,
+                    actual_barricades INTEGER,
+                    actual_patrol_jeeps INTEGER,
+                    actual_tow_vehicles INTEGER,
+                    actual_command_vans INTEGER,
                     FOREIGN KEY (prediction_id) REFERENCES predictions(prediction_id)
                 )
             """)
+            # Migrate outcomes table if columns missing
+            for col in [
+                "actual_officers INTEGER",
+                "actual_barricades INTEGER",
+                "actual_patrol_jeeps INTEGER",
+                "actual_tow_vehicles INTEGER",
+                "actual_command_vans INTEGER",
+            ]:
+                try:
+                    con.execute(f"ALTER TABLE outcomes ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
+            # Migrate predictions table with predicted resource columns
+            for col in [
+                "pred_officers INTEGER",
+                "pred_barricades INTEGER",
+                "pred_patrol_jeeps INTEGER",
+                "pred_tow_vehicles INTEGER",
+                "pred_command_vans INTEGER",
+            ]:
+                try:
+                    con.execute(f"ALTER TABLE predictions ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
 
     # ── Log a prediction ────────────────────────────────────────────────────────
 
-    def log_prediction(self, event: dict, prediction: dict) -> int:
+    def log_prediction(self, event: dict, prediction: dict,
+                        resource_plan: dict = None) -> int:
         """Record a prediction; returns its prediction_id (used to link outcome)."""
+        rplan = resource_plan or {}
         with self._connect() as con:
             cur = con.execute(
                 """INSERT INTO predictions
                    (created_at, event_cause, corridor, corridor_norm, hour,
                     day_of_week, pred_severity, pred_confidence, pred_duration,
-                    features_json)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    features_json, event_category, event_subcategory,
+                    pred_officers, pred_barricades, pred_patrol_jeeps,
+                    pred_tow_vehicles, pred_command_vans)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     datetime.now(timezone.utc).isoformat(),
                     event.get("event_cause"),
@@ -90,6 +131,13 @@ class PostEventLearning:
                     prediction.get("confidence"),
                     prediction.get("duration_mins"),
                     json.dumps(event, default=str),
+                    event.get("event_category"),
+                    event.get("event_subcategory"),
+                    rplan.get("total_officers"),
+                    rplan.get("total_barricades"),
+                    rplan.get("patrol_jeeps"),
+                    rplan.get("tow_vehicles"),
+                    rplan.get("command_vans"),
                 ),
             )
             return cur.lastrowid
@@ -98,8 +146,13 @@ class PostEventLearning:
 
     def record_outcome(self, prediction_id: int,
                        actual_severity: str = None,
-                       actual_duration_mins: float = None) -> dict:
-        """Log the real outcome of a previously-predicted event and score it."""
+                       actual_duration_mins: float = None,
+                       actual_officers: int = None,
+                       actual_barricades: int = None,
+                       actual_patrol_jeeps: int = None,
+                       actual_tow_vehicles: int = None,
+                       actual_command_vans: int = None) -> dict:
+        """Log (or overwrite) the real outcome of a previously-predicted event."""
         with self._connect() as con:
             row = con.execute(
                 "SELECT pred_severity, pred_duration FROM predictions WHERE prediction_id=?",
@@ -118,16 +171,25 @@ class PostEventLearning:
                 if (actual_duration_mins is not None and pred_dur is not None)
                 else None
             )
+            # Allow overwriting previous outcome for same prediction
+            con.execute(
+                "DELETE FROM outcomes WHERE prediction_id=?",
+                (prediction_id,)
+            )
             con.execute(
                 """INSERT INTO outcomes
                    (prediction_id, recorded_at, actual_severity, actual_duration,
-                    severity_correct, duration_error)
-                   VALUES (?,?,?,?,?,?)""",
+                    severity_correct, duration_error,
+                    actual_officers, actual_barricades, actual_patrol_jeeps,
+                    actual_tow_vehicles, actual_command_vans)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     prediction_id,
                     datetime.now(timezone.utc).isoformat(),
                     actual_severity, actual_duration_mins,
                     sev_correct, dur_error,
+                    actual_officers, actual_barricades, actual_patrol_jeeps,
+                    actual_tow_vehicles, actual_command_vans,
                 ),
             )
         return {
@@ -207,9 +269,54 @@ class PostEventLearning:
                 out.append({"corridor": cn, "correction_factor": round(cf, 3)})
         return sorted(out, key=lambda x: abs(x["correction_factor"] - 1.0), reverse=True)
 
+    def get_comparison_data(self, limit: int = 50) -> list:
+        """Return predicted vs. actually deployed resources for recorded outcomes."""
+        with self._connect() as con:
+            rows = con.execute(
+                """SELECT
+                    o.outcome_id,
+                    p.prediction_id,
+                    p.created_at,
+                    p.event_cause,
+                    p.corridor,
+                    p.pred_severity,
+                    p.pred_duration,
+                    p.pred_officers,
+                    p.pred_barricades,
+                    p.pred_patrol_jeeps,
+                    p.pred_tow_vehicles,
+                    p.pred_command_vans,
+                    o.actual_severity,
+                    o.actual_duration,
+                    o.actual_officers,
+                    o.actual_barricades,
+                    o.actual_patrol_jeeps,
+                    o.actual_tow_vehicles,
+                    o.actual_command_vans,
+                    o.severity_correct,
+                    o.duration_error
+                   FROM outcomes o
+                   JOIN predictions p ON o.prediction_id = p.prediction_id
+                   ORDER BY o.outcome_id DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        cols = [
+            "outcome_id", "prediction_id", "created_at", "event_cause", "corridor",
+            "pred_severity", "pred_duration",
+            "pred_officers", "pred_barricades", "pred_patrol_jeeps",
+            "pred_tow_vehicles", "pred_command_vans",
+            "actual_severity", "actual_duration",
+            "actual_officers", "actual_barricades", "actual_patrol_jeeps",
+            "actual_tow_vehicles", "actual_command_vans",
+            "severity_correct", "duration_error"
+        ]
+        return [dict(zip(cols, row)) for row in rows]
+
     def reset(self):
         """Wipe all logs (useful for demo resets)."""
         with self._connect() as con:
             con.execute("DROP TABLE IF EXISTS outcomes")
             con.execute("DROP TABLE IF EXISTS predictions")
         self._init_db()
+

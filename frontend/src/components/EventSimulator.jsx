@@ -15,27 +15,162 @@ export default function EventSimulator() {
     "Tumkur Road", "Varthur Road", "West of Chord Road"
   ];
 
+  const CORRIDOR_OPTIONS = [
+    ...CORRIDORS.map(c => ({ value: c, label: c })),
+    { value: 'others', label: 'Others (specify)' }
+  ];
+
   const VEHICLES = [
     "(none)", "auto", "bmtc_bus", "heavy_vehicle", "ksrtc_bus", "lcv",
     "private_bus", "private_car", "taxi", "truck", "others"
   ];
 
+  const VEHICLE_OPTIONS = [
+    { value: '(none)', label: 'None' },
+    { value: 'auto', label: 'Auto' },
+    { value: 'bmtc_bus', label: 'BMTC BUS' },
+    { value: 'heavy_vehicle', label: 'Heavy Vehicle' },
+    { value: 'ksrtc_bus', label: 'KSRTC BUS' },
+    { value: 'lcv', label: 'LCV' },
+    { value: 'private_bus', label: 'Private Bus' },
+    { value: 'private_car', label: 'Private Car' },
+    { value: 'taxi', label: 'Taxi' },
+    { value: 'truck', label: 'Truck' },
+    { value: 'others', label: 'Others' }
+  ];
+
+  const now = new Date();
+  const currentHours = String(now.getHours()).padStart(2, '0');
+  const currentMinutes = String(now.getMinutes()).padStart(2, '0');
+  const currentTime = `${currentHours}:${currentMinutes}`;
+
   // Form states
-  const [cause, setCause] = useState('vip_movement');
-  const [corridor, setCorridor] = useState('Airport New South Road');
-  const [veh, setVeh] = useState('(none)');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [startTime, setStartTime] = useState('18:00');
-  const [duration, setDuration] = useState(4.0);
-  const [closure, setClosure] = useState(true);
+  const [category, setCategory] = useState('');
+  const [subcategory, setSubcategory] = useState('');
+  const [customCause, setCustomCause] = useState('');
+  const [subcategorySearchQuery, setSubcategorySearchQuery] = useState('');
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [subcategoryDropdownOpen, setSubcategoryDropdownOpen] = useState(false);
+  const categoryDropdownRef = useRef(null);
+  const subcategoryDropdownRef = useRef(null);
+
+  const [corridor, setCorridor] = useState('');
+  const [customCorridor, setCustomCorridor] = useState('');
+  const [corridorSearchQuery, setCorridorSearchQuery] = useState('');
+  const [corridorDropdownOpen, setCorridorDropdownOpen] = useState(false);
+  const corridorDropdownRef = useRef(null);
+  const [veh, setVeh] = useState('');
+  const [startDate, setStartDate] = useState(now.toISOString().split('T')[0]);
+  const [startTime, setStartTime] = useState(currentTime);
+  const [duration, setDuration] = useState('');
+  const [closure, setClosure] = useState(false);
+
+  // Calendar Picker state
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const calendarRef = useRef(null);
+  
+  const parseDate = (dStr) => {
+    if (!dStr) return new Date();
+    const parts = dStr.split('-');
+    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  };
+  
+  const parsedStart = parseDate(now.toISOString().split('T')[0]);
+  const [calendarMonth, setCalendarMonth] = useState(parsedStart.getMonth());
+  const [calendarYear, setCalendarYear] = useState(parsedStart.getFullYear());
+
+  // Time Picker state
+  const [timeOpen, setTimeOpen] = useState(false);
+  const timeRef = useRef(null);
 
   // Result states
   const [simData, setSimData] = useState(null);
-  const [opPlan, setOpPlan] = useState(null);
+  const [showDiversion, setShowDiversion] = useState(false);
+
+  // ── Human-in-the-loop feedback states ───────────────────────────────────────
+  const [fbOfficers, setFbOfficers] = useState('');
+  const [fbBarricades, setFbBarricades] = useState('');
+  const [fbPatrolJeeps, setFbPatrolJeeps] = useState('');
+  const [fbTowVehicles, setFbTowVehicles] = useState('');
+  const [fbCommandVans, setFbCommandVans] = useState('');
+  const [fbSeverity, setFbSeverity] = useState('Medium');
+  const [fbDuration, setFbDuration] = useState('');
+  const [fbStatus, setFbStatus] = useState(null); // null | 'submitting' | 'success' | 'error'
+  const [fbMsg, setFbMsg] = useState('');
+  // Tracks the original suggested values so we know if the user has edited anything
+  const fbOriginal = useRef({});
+
+  // Pre-populate feedback form whenever a simulation result arrives
+  useEffect(() => {
+    if (simData) {
+      const rp = simData.resource_plan;
+      const seed = {
+        officers:    rp.total_officers   ?? '',
+        barricades:  rp.total_barricades ?? '',
+        patrolJeeps: rp.patrol_jeeps     ?? '',
+        towVehicles: rp.tow_vehicles     ?? '',
+        commandVans: rp.command_vans     ?? '',
+        severity:    simData.prediction.severity       ?? 'Medium',
+        duration:    Math.round(simData.prediction.duration_mins) ?? '',
+      };
+      fbOriginal.current = seed;
+      setFbOfficers(seed.officers);
+      setFbBarricades(seed.barricades);
+      setFbPatrolJeeps(seed.patrolJeeps);
+      setFbTowVehicles(seed.towVehicles);
+      setFbCommandVans(seed.commandVans);
+      setFbSeverity(seed.severity);
+      setFbDuration(seed.duration);
+      setFbStatus(null);
+      setFbMsg('');
+    }
+  }, [simData]);
+
+  // True as soon as any value differs from the original suggestion
+  const isEdited = simData && (
+    String(fbOfficers)    !== String(fbOriginal.current.officers)    ||
+    String(fbBarricades)  !== String(fbOriginal.current.barricades)  ||
+    String(fbPatrolJeeps) !== String(fbOriginal.current.patrolJeeps) ||
+    String(fbTowVehicles) !== String(fbOriginal.current.towVehicles) ||
+    String(fbCommandVans) !== String(fbOriginal.current.commandVans) ||
+    fbSeverity            !== fbOriginal.current.severity            ||
+    String(fbDuration)    !== String(fbOriginal.current.duration)
+  );
+
+  const handleFeedback = (approved) => {
+    if (!simData) return;
+    setFbStatus('submitting');
+    setFbMsg('');
+    const payload = {
+      prediction_id: simData.prediction_id,
+      actual_severity: fbSeverity,
+      actual_duration: parseFloat(fbDuration) || Math.round(simData.prediction.duration_mins),
+      actual_officers: parseInt(fbOfficers) || null,
+      actual_barricades: parseInt(fbBarricades) || null,
+      actual_patrol_jeeps: parseInt(fbPatrolJeeps) || null,
+      actual_tow_vehicles: parseInt(fbTowVehicles) || null,
+      actual_command_vans: parseInt(fbCommandVans) || null,
+    };
+    fetch('/api/learning/outcome', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(res => res.json())
+      .then(data => {
+        setFbStatus('success');
+        setFbMsg(approved
+          ? '✅ Suggested plan approved and saved to learning system.'
+          : '✅ Adjusted deployment saved. The system will learn from this feedback.');
+      })
+      .catch(() => {
+        setFbStatus('error');
+        setFbMsg('❌ Failed to save feedback. Please try again.');
+      });
+  };
 
   // Loading states
   const [simulating, setSimulating] = useState(false);
-  const [loadingNarrative, setLoadingNarrative] = useState(false);
 
   // OSRM map ref
   const mapRef = useRef(null);
@@ -45,14 +180,48 @@ export default function EventSimulator() {
   // Form submit handler
   const handleSimulate = (e) => {
     e.preventDefault();
+    if (!category) {
+      alert("Please select an Event Category.");
+      return;
+    }
+    if (!subcategory) {
+      alert("Please select an Event Cause (Subcategory).");
+      return;
+    }
+    if (subcategory === 'others' && !customCause.trim()) {
+      alert("Please specify the event cause details.");
+      return;
+    }
+    if (!corridor) {
+      alert("Please select a Corridor.");
+      return;
+    }
+    if (corridor === 'others' && !customCorridor.trim()) {
+      alert("Please specify the corridor name.");
+      return;
+    }
+    if (!duration) {
+      alert("Please enter a Duration.");
+      return;
+    }
     setSimulating(true);
     setSimData(null);
-    setOpPlan(null);
+    setShowDiversion(false);
+
+    const resolvedCause = subcategory === 'others' && customCause.trim()
+      ? customCause.trim().toLowerCase().replace(/\s+/g, '_')
+      : subcategory;
+
+    const resolvedCorridor = corridor === 'others' && customCorridor.trim()
+      ? customCorridor.trim()
+      : corridor;
 
     const payload = {
-      event_cause: cause,
-      corridor: corridor,
-      veh_type: veh,
+      event_category: category,
+      event_subcategory: subcategory,
+      event_cause: resolvedCause,
+      corridor: resolvedCorridor,
+      veh_type: veh === '' ? null : (veh === '(none)' ? null : veh),
       start_date: startDate,
       start_time: startTime,
       duration_hrs: parseFloat(duration),
@@ -78,31 +247,108 @@ export default function EventSimulator() {
       });
   };
 
-  // Generate Gemini Operational Narrative
-  const handleGenerateNarrative = () => {
-    if (!simData) return;
-    setLoadingNarrative(true);
-    setOpPlan(null);
+  const CATEGORIES = [
+    { value: 'planned_event', label: 'Planned Event' },
+    { value: 'infrastructure_hazards', label: 'Infrastructure & Hazards' },
+    { value: 'traffic_incidents', label: 'Traffic Incidents' }
+  ];
 
-    const payload = {
-      event: simData.event,
-      prediction: simData.prediction
+  const SUBCATEGORIES = {
+    planned_event: [
+      { value: 'public_event', label: 'Public Event' },
+      { value: 'procession', label: 'Procession' },
+      { value: 'vip_movement', label: 'VIP Movement' },
+      { value: 'protest', label: 'Protest' },
+      { value: 'construction', label: 'Construction' },
+      { value: 'others', label: 'Others (specify)' }
+    ],
+    infrastructure_hazards: [
+      { value: 'tree_fall', label: 'Tree Fall' },
+      { value: 'water_logging', label: 'Water Logging' },
+      { value: 'pot_holes', label: 'Pot Holes' },
+      { value: 'others', label: 'Others (specify)' }
+    ],
+    traffic_incidents: [
+      { value: 'accident', label: 'Accident' },
+      { value: 'vehicle_breakdown', label: 'Vehicle Breakdown' },
+      { value: 'congestion', label: 'Congestion' },
+      { value: 'others', label: 'Others (specify)' }
+    ]
+  };
+
+  // Click outside to close custom dropdown, calendar, and time pickers
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target)) {
+        setCategoryDropdownOpen(false);
+      }
+      if (subcategoryDropdownRef.current && !subcategoryDropdownRef.current.contains(event.target)) {
+        setSubcategoryDropdownOpen(false);
+      }
+      if (corridorDropdownRef.current && !corridorDropdownRef.current.contains(event.target)) {
+        setCorridorDropdownOpen(false);
+      }
+      if (calendarRef.current && !calendarRef.current.contains(event.target)) {
+        setCalendarOpen(false);
+      }
+      if (timeRef.current && !timeRef.current.contains(event.target)) {
+        setTimeOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
     };
+  }, []);
 
-    fetch('/api/simulate-narrative', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-      .then(res => res.json())
-      .then(data => {
-        setOpPlan(data);
-        setLoadingNarrative(false);
-      })
-      .catch(err => {
-        console.error("Error generating narrative: ", err);
-        setLoadingNarrative(false);
-      });
+  const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+  const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
+
+  const isSameDay = (y, m, d, compareStr) => {
+    if (!compareStr) return false;
+    const parts = compareStr.split('-');
+    return parseInt(parts[0], 10) === y && (parseInt(parts[1], 10) - 1) === m && parseInt(parts[2], 10) === d;
+  };
+
+  const formatDisplayDate = (dStr) => {
+    if (!dStr) return "Pick a date";
+    const d = parseDate(dStr);
+    return d.toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' });
+  };
+
+  const prevMonth = () => {
+    if (calendarMonth === 0) {
+      setCalendarMonth(11);
+      setCalendarYear(calendarYear - 1);
+    } else {
+      setCalendarMonth(calendarMonth - 1);
+    }
+  };
+
+  const nextMonth = () => {
+    if (calendarMonth === 11) {
+      setCalendarMonth(0);
+      setCalendarYear(calendarYear + 1);
+    } else {
+      setCalendarMonth(calendarMonth + 1);
+    }
+  };
+
+  const selectDate = (y, m, d) => {
+    const formatted = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    setStartDate(formatted);
+    setCalendarOpen(false);
+  };
+
+  const selectHour = (hrStr) => {
+    const currentMin = startTime.split(':')[1] || '00';
+    setStartTime(`${hrStr}:${currentMin}`);
+  };
+
+  const selectMinute = (minStr) => {
+    const currentHr = startTime.split(':')[0] || '12';
+    setStartTime(`${currentHr}:${minStr}`);
+    setTimeOpen(false);
   };
 
   // Setup Leaflet map for OSRM Route Rerouting
@@ -154,7 +400,7 @@ export default function EventSimulator() {
     }
 
     // Diverted route (Green Polyline)
-    if (dplan.diverted_route && dplan.diverted_route.geometry) {
+    if (showDiversion && dplan.diverted_route && dplan.diverted_route.geometry) {
       const coords = dplan.diverted_route.geometry.coordinates.map(c => [c[1], c[0]]);
       L.polyline(coords, {
         color: '#2f9e57',
@@ -186,7 +432,7 @@ export default function EventSimulator() {
     const bounds = L.latLngBounds([origin, dest]);
     mapInstanceRef.current.fitBounds(bounds, { padding: [40, 40] });
 
-  }, [simData]);
+  }, [simData, showDiversion]);
 
   // Deriving ranks from total force
   const deriveRanks = (n) => {
@@ -221,51 +467,555 @@ export default function EventSimulator() {
       <div className="glass-card">
         <div className="card-title card-title-border">Describe the Event</div>
         <form onSubmit={handleSimulate} className="simulator-form">
-          <div className="input-grid-3">
-            <div className="form-group">
-              <label className="form-label">Event cause</label>
-              <select className="form-input" value={cause} onChange={(e) => setCause(e.target.value)}>
-                {CAUSES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
-              </select>
+          <div className="input-grid-4">
+            <div className="form-group" ref={categoryDropdownRef} style={{ position: 'relative' }}>
+              <label className="form-label">Event Category</label>
+              <div 
+                className="form-input" 
+                onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                style={{ 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '12px 14px'
+                }}
+              >
+                <span style={{ color: category ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  {CATEGORIES.find(opt => opt.value === category)?.label || "Select Category..."}
+                </span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '10px' }}>{categoryDropdownOpen ? '▲' : '▼'}</span>
+              </div>
+
+              {categoryDropdownOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  background: 'white',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
+                  zIndex: 1000,
+                  marginTop: '6px',
+                  maxHeight: '260px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden'
+                }}>
+                  {/* Category Options */}
+                  <div style={{ overflowY: 'auto', flexGrow: 1 }}>
+                    {CATEGORIES.map(opt => (
+                      <div
+                        key={opt.value}
+                        onClick={() => {
+                          setCategory(opt.value);
+                          setSubcategory(''); // Reset subcategory on category change
+                          setCustomCause(''); // Reset custom specify box
+                          setCategoryDropdownOpen(false);
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          cursor: 'pointer',
+                          fontSize: '0.92rem',
+                          background: category === opt.value ? '#f0fdf4' : 'transparent',
+                          color: category === opt.value ? 'var(--color-green)' : 'var(--text-primary)',
+                          fontWeight: category === opt.value ? '700' : '500',
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseOver={(e) => {
+                          if (category !== opt.value) e.currentTarget.style.background = '#f5f5f5';
+                        }}
+                        onMouseOut={(e) => {
+                          if (category !== opt.value) e.currentTarget.style.background = 'transparent';
+                        }}
+                      >
+                        {opt.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="form-group">
+            <div className="form-group" ref={subcategoryDropdownRef} style={{ position: 'relative' }}>
+              <label className="form-label">Event Cause (Subcategory)</label>
+              <div 
+                className="form-input" 
+                onClick={() => {
+                  if (category) {
+                    setSubcategoryDropdownOpen(!subcategoryDropdownOpen);
+                  }
+                }}
+                style={{ 
+                  cursor: category ? 'pointer' : 'not-allowed', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  background: category ? 'var(--bg-card)' : '#f9f9f9',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  opacity: category ? 1 : 0.6
+                }}
+              >
+                <span style={{ color: subcategory ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  {category 
+                    ? (SUBCATEGORIES[category]?.find(opt => opt.value === subcategory)?.label || "Select Cause...")
+                    : "Select Category First"
+                  }
+                </span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '10px' }}>{subcategoryDropdownOpen ? '▲' : '▼'}</span>
+              </div>
+
+              {category && subcategoryDropdownOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  background: 'white',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
+                  zIndex: 1000,
+                  marginTop: '6px',
+                  maxHeight: '260px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden'
+                }}>
+                  {/* Search input */}
+                  <div style={{ padding: '8px', borderBottom: '1px solid #f0f0f0' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Search cause..."
+                      value={subcategorySearchQuery}
+                      onChange={(e) => setSubcategorySearchQuery(e.target.value)}
+                      onClick={(e) => e.stopPropagation()} // Prevent close on search click
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: '0.88rem',
+                        borderRadius: '8px',
+                        border: '1px solid #e0e0e0',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  {/* Options */}
+                  <div style={{ overflowY: 'auto', flexGrow: 1 }}>
+                    {(SUBCATEGORIES[category] || []).filter(opt => 
+                      opt.label.toLowerCase().includes(subcategorySearchQuery.toLowerCase())
+                    ).map(opt => (
+                      <div
+                        key={opt.value}
+                        onClick={() => {
+                          setSubcategory(opt.value);
+                          setSubcategoryDropdownOpen(false);
+                          setSubcategorySearchQuery('');
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          cursor: 'pointer',
+                          fontSize: '0.92rem',
+                          background: subcategory === opt.value ? '#f0fdf4' : 'transparent',
+                          color: subcategory === opt.value ? 'var(--color-green)' : 'var(--text-primary)',
+                          fontWeight: subcategory === opt.value ? '700' : '500',
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseOver={(e) => {
+                          if (subcategory !== opt.value) e.currentTarget.style.background = '#f5f5f5';
+                        }}
+                        onMouseOut={(e) => {
+                          if (subcategory !== opt.value) e.currentTarget.style.background = 'transparent';
+                        }}
+                      >
+                        {opt.label}
+                      </div>
+                    ))}
+                    {(SUBCATEGORIES[category] || []).filter(opt => 
+                      opt.label.toLowerCase().includes(subcategorySearchQuery.toLowerCase())
+                    ).length === 0 && (
+                      <div style={{ padding: '12px 14px', fontSize: '0.88rem', color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center' }}>
+                        No match found
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="form-group" ref={corridorDropdownRef} style={{ position: 'relative' }}>
               <label className="form-label">Corridor</label>
-              <select className="form-input" value={corridor} onChange={(e) => setCorridor(e.target.value)}>
-                {CORRIDORS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <div 
+                className="form-input" 
+                onClick={() => setCorridorDropdownOpen(!corridorDropdownOpen)}
+                style={{ 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '12px 14px'
+                }}
+              >
+                <span style={{ color: corridor ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  {CORRIDOR_OPTIONS.find(opt => opt.value === corridor)?.label || "Select Corridor..."}
+                </span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '10px' }}>{corridorDropdownOpen ? '▲' : '▼'}</span>
+              </div>
+
+              {corridorDropdownOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  background: 'white',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
+                  zIndex: 1000,
+                  marginTop: '6px',
+                  maxHeight: '260px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden'
+                }}>
+                  {/* Search input */}
+                  <div style={{ padding: '8px', borderBottom: '1px solid #f0f0f0' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Search corridor..."
+                      value={corridorSearchQuery}
+                      onChange={(e) => setCorridorSearchQuery(e.target.value)}
+                      onClick={(e) => e.stopPropagation()} // Prevent close on search click
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: '0.88rem',
+                        borderRadius: '8px',
+                        border: '1px solid #e0e0e0',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  {/* Options */}
+                  <div style={{ overflowY: 'auto', flexGrow: 1 }}>
+                    {CORRIDOR_OPTIONS.filter(opt => 
+                      opt.label.toLowerCase().includes(corridorSearchQuery.toLowerCase())
+                    ).map(opt => (
+                      <div
+                        key={opt.value}
+                        onClick={() => {
+                          setCorridor(opt.value);
+                          setCorridorDropdownOpen(false);
+                          setCorridorSearchQuery('');
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          cursor: 'pointer',
+                          fontSize: '0.92rem',
+                          background: corridor === opt.value ? '#f0fdf4' : 'transparent',
+                          color: corridor === opt.value ? 'var(--color-green)' : 'var(--text-primary)',
+                          fontWeight: corridor === opt.value ? '700' : '500',
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseOver={(e) => {
+                          if (corridor !== opt.value) e.currentTarget.style.background = '#f5f5f5';
+                        }}
+                        onMouseOut={(e) => {
+                          if (corridor !== opt.value) e.currentTarget.style.background = 'transparent';
+                        }}
+                      >
+                        {opt.label}
+                      </div>
+                    ))}
+                    {CORRIDOR_OPTIONS.filter(opt => 
+                      opt.label.toLowerCase().includes(corridorSearchQuery.toLowerCase())
+                    ).length === 0 && (
+                      <div style={{ padding: '12px 14px', fontSize: '0.88rem', color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center' }}>
+                        No match found
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="form-group">
               <label className="form-label">Vehicle type (if any)</label>
-              <select className="form-input" value={veh} onChange={(e) => setVeh(e.target.value)}>
-                {VEHICLES.map(v => <option key={v} value={v}>{v}</option>)}
+              <select className="form-input" value={veh} onChange={(e) => setVeh(e.target.value)} required style={{ color: veh ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                <option value="" disabled hidden>Select Vehicle Type...</option>
+                {VEHICLE_OPTIONS.map(opt => <option key={opt.value} value={opt.value} style={{ color: 'var(--text-primary)' }}>{opt.label}</option>)}
               </select>
             </div>
           </div>
 
+          {/* Dynamic specify details inputs rendered on their own row to prevent select box squeeze */}
+          {(subcategory === 'others' || corridor === 'others') && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              {subcategory === 'others' ? (
+                <div className="form-group">
+                  <label className="form-label">Specify Event Cause Details</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Specify event cause details..."
+                    value={customCause}
+                    onChange={(e) => setCustomCause(e.target.value)}
+                    style={{
+                      borderColor: 'var(--color-amber)',
+                      boxShadow: '0 0 0 1px var(--color-amber)'
+                    }}
+                    required
+                  />
+                </div>
+              ) : <div />}
+              {corridor === 'others' ? (
+                <div className="form-group">
+                  <label className="form-label">Specify Corridor Details</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Specify corridor details..."
+                    value={customCorridor}
+                    onChange={(e) => setCustomCorridor(e.target.value)}
+                    style={{
+                      borderColor: 'var(--color-amber)',
+                      boxShadow: '0 0 0 1px var(--color-amber)'
+                    }}
+                    required
+                  />
+                </div>
+              ) : <div />}
+            </div>
+          )}
+
           <div className="input-grid-4">
-            <div className="form-group">
+            <div className="form-group" ref={calendarRef} style={{ position: 'relative' }}>
               <label className="form-label">Event Date</label>
-              <input type="date" className="form-input" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <button
+                type="button"
+                className="form-input"
+                onClick={() => setCalendarOpen(!calendarOpen)}
+                style={{
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  textAlign: 'left',
+                  width: '100%',
+                  fontWeight: '500',
+                  color: 'var(--text-primary)'
+                }}
+              >
+                <span style={{ fontSize: '1rem' }}>📅</span>
+                <span>{formatDisplayDate(startDate)}</span>
+              </button>
+
+              {calendarOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  background: 'white',
+                  border: '1px solid #e4e4e7',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                  padding: '16px',
+                  zIndex: 1000,
+                  marginTop: '6px',
+                  width: '260px'
+                }}>
+                  {/* Calendar Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <button type="button" onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', color: '#71717a' }}>◀</button>
+                    <span style={{ fontWeight: '600', fontSize: '0.88rem', color: '#18181b' }}>
+                      {new Date(calendarYear, calendarMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                    </span>
+                    <button type="button" onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', color: '#71717a' }}>▶</button>
+                  </div>
+                  {/* Days of Week */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', marginBottom: '8px' }}>
+                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                      <span key={d} style={{ fontSize: '0.75rem', fontWeight: '500', color: '#71717a' }}>{d}</span>
+                    ))}
+                  </div>
+                  {/* Days Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+                    {Array.from({ length: getFirstDayOfMonth(calendarYear, calendarMonth) }).map((_, idx) => (
+                      <div key={`empty-${idx}`} />
+                    ))}
+                    {Array.from({ length: getDaysInMonth(calendarYear, calendarMonth) }).map((_, idx) => {
+                      const day = idx + 1;
+                      const isSelected = isSameDay(calendarYear, calendarMonth, day, startDate);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => selectDate(calendarYear, calendarMonth, day)}
+                          style={{
+                            width: '30px',
+                            height: '30px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '50%',
+                            border: 'none',
+                            fontSize: '0.8rem',
+                            fontWeight: isSelected ? '600' : '400',
+                            cursor: 'pointer',
+                            background: isSelected ? '#18181b' : 'transparent',
+                            color: isSelected ? 'white' : '#18181b',
+                            transition: 'background 0.2s'
+                          }}
+                          onMouseOver={(e) => {
+                            if (!isSelected) e.currentTarget.style.background = '#f4f4f5';
+                          }}
+                          onMouseOut={(e) => {
+                            if (!isSelected) e.currentTarget.style.background = 'transparent';
+                          }}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="form-group">
+            <div className="form-group" ref={timeRef} style={{ position: 'relative' }}>
               <label className="form-label">Start Time</label>
-              <input type="time" className="form-input" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+              <button
+                type="button"
+                className="form-input"
+                onClick={() => setTimeOpen(!timeOpen)}
+                style={{
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  textAlign: 'left',
+                  width: '100%',
+                  fontWeight: '500',
+                  color: 'var(--text-primary)'
+                }}
+              >
+                <span style={{ fontSize: '1rem' }}>🕒</span>
+                <span>{startTime || "Select time"}</span>
+              </button>
+
+              {timeOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  background: 'white',
+                  border: '1px solid #e4e4e7',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                  padding: '8px',
+                  zIndex: 1000,
+                  marginTop: '6px',
+                  width: '140px',
+                  height: '200px',
+                  display: 'flex',
+                  gap: '4px'
+                }}>
+                  {/* Hours column */}
+                  <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#71717a', textAlign: 'center', paddingBottom: '4px', borderBottom: '1px solid #f4f4f5' }}>Hr</div>
+                    {Array.from({ length: 24 }).map((_, hr) => {
+                      const hrStr = String(hr).padStart(2, '0');
+                      const currentHr = startTime.split(':')[0];
+                      const isSelected = currentHr === hrStr;
+                      return (
+                        <button
+                          key={hr}
+                          type="button"
+                          onClick={() => selectHour(hrStr)}
+                          style={{
+                            background: isSelected ? '#18181b' : 'transparent',
+                            color: isSelected ? 'white' : '#18181b',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '6px 0',
+                            fontSize: '0.8rem',
+                            fontWeight: isSelected ? '600' : '400',
+                            cursor: 'pointer',
+                            margin: '2px 0'
+                          }}
+                        >
+                          {hrStr}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Minutes column */}
+                  <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#71717a', textAlign: 'center', paddingBottom: '4px', borderBottom: '1px solid #f4f4f5' }}>Min</div>
+                    {Array.from({ length: 12 }).map((_, minIdx) => {
+                      const minVal = minIdx * 5;
+                      const minStr = String(minVal).padStart(2, '0');
+                      const currentMin = startTime.split(':')[1];
+                      const isSelected = currentMin === minStr;
+                      return (
+                        <button
+                          key={minVal}
+                          type="button"
+                          onClick={() => selectMinute(minStr)}
+                          style={{
+                            background: isSelected ? '#18181b' : 'transparent',
+                            color: isSelected ? 'white' : '#18181b',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '6px 0',
+                            fontSize: '0.8rem',
+                            fontWeight: isSelected ? '600' : '400',
+                            cursor: 'pointer',
+                            margin: '2px 0'
+                          }}
+                        >
+                          {minStr}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="form-group">
-              <label className="form-label">Duration: {duration} hrs</label>
+              <label className="form-label">Duration (hrs)</label>
               <input
-                type="range"
+                type="number"
                 min="0.5"
-                max="12.0"
+                max="24.0"
                 step="0.5"
+                placeholder="Enter duration..."
                 className="form-input"
                 value={duration}
                 onChange={(e) => setDuration(e.target.value)}
-                style={{ padding: '5px 0' }}
+                required
               />
             </div>
 
@@ -409,121 +1159,174 @@ export default function EventSimulator() {
             </div>
           </div>
 
-          {/* AI Narrative plan trigger */}
-          <div className="glass-card">
-            <div className="card-title card-title-border">🧭 Diversion & Operational Narrative</div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '15px' }}>
-              Numbers above are AegisTraffic's deterministic rules. Click below to generate AI-drafted diversion plans, timelines, and advisories.
+
+          {/* ── Operational Deployment Feedback ─────────────────────────────── */}
+          <div className="glass-card" style={{ borderTop: '3px solid var(--color-purple)' }}>
+            <div className="card-title card-title-border" style={{ borderColor: 'var(--color-purple)' }}>
+              🔁 Operational Deployment Feedback
+            </div>
+            <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: 1.5 }}>
+              Review the suggested deployment plan below. You can <strong>approve</strong> it as-is, or adjust any values to reflect what was actually deployed — the system will learn from every submission.
             </p>
-            <button className="submit-btn" onClick={handleGenerateNarrative} disabled={loadingNarrative} style={{ background: '#475569', boxShadow: 'none' }}>
-              {loadingNarrative ? (
-                <>
-                  <span className="spinner" style={{ width: '18px', height: '18px', borderLeftColor: '#fff' }}></span>
-                  <span>Drafting diversion plans...</span>
-                </>
-              ) : (
-                <span>🧭 Show Diversion Routes & AI Plan</span>
-              )}
-            </button>
 
-            {/* Narrative outputs */}
-            {opPlan && opPlan.available && (
-              <div className="flex-column-gap-10" style={{ marginTop: '24px', gap: '20px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                  {/* Diversion Legs */}
-                  <div className="glass-card" style={{ padding: '18px' }}>
-                    <div className="card-title card-title-border" style={{ fontSize: '0.9rem' }}>🧭 Diversion Routes</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {opPlan.plan.diversion_legs && opPlan.plan.diversion_legs.map((leg, index) => (
-                        <div key={index} className="similar-event-card" style={{ padding: '10px', background: '#fafafa' }}>
-                          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>
-                            {leg.for_whom || 'Commuters'}
-                          </span>
-                          <span style={{ fontSize: '0.86rem', fontWeight: 600 }}>
-                            <strong>{leg.from}</strong> → <span style={{ color: 'var(--color-blue)' }}>{leg.via}</span> → <strong>{leg.to}</strong>
-                          </span>
-                        </div>
-                      ))}
-                      {(!opPlan.plan.diversion_legs || opPlan.plan.diversion_legs.length === 0) && (
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No diversion required.</span>
-                      )}
-                      {opPlan.plan.hgv_ban && (
-                        <div style={{ fontSize: '0.82rem', marginTop: '5px' }}>
-                          🚛 <strong>HGV restriction:</strong> {opPlan.plan.hgv_ban}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Precedent details */}
-                  <div className="glass-card" style={{ padding: '18px' }}>
-                    <div className="card-title card-title-border" style={{ fontSize: '0.9rem' }}>📜 What History Shows</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {simData.precedents.typical_closure_mins !== null ? (
-                        <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                          Typically clears in <span style={{ color: 'var(--color-blue)' }}>~{Math.round(simData.precedents.typical_closure_mins)} min</span>
-                          {simData.precedents.low_confidence && ' ⚠️ limited data'} · {simData.precedents.high_severity_count}/5 precedent cases were High.
+            {/* Resource Inputs */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '20px' }}>
+              {[
+                { label: '👮 Officers', value: fbOfficers, setter: setFbOfficers, color: 'var(--color-blue)', predicted: simData?.resource_plan?.total_officers },
+                { label: '🚧 Barricades', value: fbBarricades, setter: setFbBarricades, color: 'var(--color-gold-start)', predicted: simData?.resource_plan?.total_barricades },
+                { label: '🚔 Patrol Jeeps', value: fbPatrolJeeps, setter: setFbPatrolJeeps, color: 'var(--color-teal)', predicted: simData?.resource_plan?.patrol_jeeps },
+                { label: '🚛 Tow Vehicles', value: fbTowVehicles, setter: setFbTowVehicles, color: 'var(--color-red)', predicted: simData?.resource_plan?.tow_vehicles },
+                { label: '📡 Command Vans', value: fbCommandVans, setter: setFbCommandVans, color: 'var(--color-purple)', predicted: simData?.resource_plan?.command_vans },
+              ].map(({ label, value, setter, color, predicted }) => {
+                const diff = parseInt(value) - predicted;
+                const hasDiff = !isNaN(diff) && diff !== 0;
+                return (
+                  <div key={label} style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '14px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{label}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      className="form-input"
+                      value={value}
+                      onChange={e => setter(e.target.value)}
+                      style={{ fontSize: '1.1rem', fontWeight: 700, color, textAlign: 'center', padding: '8px', borderRadius: '8px' }}
+                    />
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                      Suggested: <strong style={{ color }}>{predicted}</strong>
+                      {hasDiff && (
+                        <span style={{
+                          marginLeft: '6px',
+                          padding: '1px 6px',
+                          borderRadius: '10px',
+                          background: diff > 0 ? '#fee2e2' : '#e0f2fe',
+                          color: diff > 0 ? '#dc2626' : '#0369a1',
+                          fontWeight: 700,
+                        }}>
+                          {diff > 0 ? `+${diff}` : diff}
                         </span>
-                      ) : (
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No historical precedents found.</span>
                       )}
-
-                      {simData.precedents.similar_events && simData.precedents.similar_events.slice(0, 3).map((s) => (
-                        <div key={s.id} className="similar-event-card" style={{ padding: '10px', background: '#fafafa' }}>
-                          <div className="similar-event-header">
-                            <span className="similar-event-date">{s.date} · {s.day}</span>
-                            <span className={`sev-badge ${s.severity.toLowerCase()}`} style={{ fontSize: '0.7rem', padding: '2px 8px' }}>
-                              {s.severity}
-                            </span>
-                          </div>
-                          <span className="similar-event-sub">
-                            {s.event_cause} on {s.corridor} · {s.closure_mins ? `${Math.round(s.closure_mins)} min` : 'n/a'}
-                          </span>
-                        </div>
-                      ))}
                     </div>
                   </div>
-                </div>
+                );
+              })}
+            </div>
 
-                {/* Timeline */}
-                <div className="glass-card" style={{ padding: '18px' }}>
-                  <div className="card-title card-title-border" style={{ fontSize: '0.9rem' }}>⏱️ Operational Timeline</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${opPlan.plan.timeline ? opPlan.plan.timeline.length : 1}, 1fr)`, gap: '15px', marginTop: '10px' }}>
-                    {opPlan.plan.timeline && opPlan.plan.timeline.map((ph, idx) => (
-                      <div key={idx} className="metric-item" style={{ minHeight: '130px', padding: '12px' }}>
-                        <span className="timeline-phase" style={{ color: 'var(--color-blue)', fontWeight: 800 }}>{ph.phase}</span>
-                        <span className="timeline-label" style={{ fontSize: '0.86rem', marginTop: '2px' }}>{ph.label}</span>
-                        <span className="timeline-action" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.3' }}>
-                          {ph.actions}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Command & Advisory */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                  <div className="glass-card" style={{ padding: '18px' }}>
-                    <div className="card-title card-title-border" style={{ fontSize: '0.9rem' }}>🎖️ Command & Control</div>
-                    <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>{opPlan.plan.command}</p>
-                  </div>
-                  <div className="glass-card" style={{ padding: '18px', borderColor: 'var(--color-amber)' }}>
-                    <div className="card-title card-title-border" style={{ fontSize: '0.9rem' }}>📢 Public Advisory (VMS)</div>
-                    <div style={{ padding: '12px', background: '#1e293b', borderRadius: '8px', color: '#f59e0b', fontFamily: 'monospace', fontSize: '0.85rem' }}>
-                      {opPlan.plan.vms_advisory}
-                    </div>
-                  </div>
-                </div>
-
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                  ⚠️ Diversion routes & timeline are AI-drafted from operational norms — verify against current ground conditions.
-                </span>
+            {/* Severity & Duration */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '22px' }}>
+              <div className="form-group">
+                <label className="form-label">Actual Severity</label>
+                <select className="form-input" value={fbSeverity} onChange={e => setFbSeverity(e.target.value)}>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
               </div>
-            )}
+              <div className="form-group">
+                <label className="form-label">Actual Clearance Duration (min)</label>
+                <input type="number" min="1" className="form-input" value={fbDuration} onChange={e => setFbDuration(e.target.value)} />
+              </div>
+            </div>
 
-            {opPlan && !opPlan.available && (
-              <div style={{ marginTop: '20px', padding: '12px', background: '#fffbeb', color: '#b45309', border: '1px solid #fef3c7', borderRadius: '10px', fontSize: '0.88rem' }}>
-                ⚠️ AI Narrative unavailable: <strong>{opPlan.reason}</strong>. Resource numbers above remain fully valid.
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+
+              {/* Approve — active only when nothing has been edited */}
+              <button
+                onClick={() => handleFeedback(true)}
+                disabled={isEdited || fbStatus === 'submitting' || fbStatus === 'success'}
+                title={isEdited ? 'You have edited values — use "Record Custom Deployment" instead' : 'Approve the suggested plan as-is'}
+                style={{
+                  background: isEdited
+                    ? '#d1fae5'
+                    : 'linear-gradient(135deg, #10b981, #059669)',
+                  color: isEdited ? '#6b7280' : 'white',
+                  border: isEdited ? '1.5px dashed #6ee7b7' : 'none',
+                  borderRadius: '12px',
+                  padding: '12px 24px',
+                  fontSize: '0.92rem',
+                  fontWeight: 700,
+                  cursor: isEdited || fbStatus === 'submitting' || fbStatus === 'success' ? 'not-allowed' : 'pointer',
+                  opacity: fbStatus === 'submitting' || fbStatus === 'success' ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: isEdited ? 'none' : '0 4px 12px rgba(16,185,129,0.25)',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseOver={e => { if (!isEdited && fbStatus !== 'success') e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
+              >
+                <span>👍 Approve Suggested Plan</span>
+              </button>
+
+              {/* Record Custom — active only after an edit */}
+              <button
+                onClick={() => handleFeedback(false)}
+                disabled={!isEdited || fbStatus === 'submitting' || fbStatus === 'success'}
+                title={!isEdited ? 'Edit any value above to enable this button' : 'Save your custom deployment'}
+                style={{
+                  background: isEdited
+                    ? 'linear-gradient(135deg, #6366f1, #4f46e5)'
+                    : '#e0e7ff',
+                  color: isEdited ? 'white' : '#6b7280',
+                  border: isEdited ? 'none' : '1.5px dashed #a5b4fc',
+                  borderRadius: '12px',
+                  padding: '12px 24px',
+                  fontSize: '0.92rem',
+                  fontWeight: 700,
+                  cursor: !isEdited || fbStatus === 'submitting' || fbStatus === 'success' ? 'not-allowed' : 'pointer',
+                  opacity: fbStatus === 'submitting' || fbStatus === 'success' ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: isEdited ? '0 4px 12px rgba(99,102,241,0.25)' : 'none',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseOver={e => { if (isEdited && fbStatus !== 'success') e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
+              >
+                <span>✏️ Record Custom Deployment</span>
+                {isEdited && (
+                  <span style={{
+                    background: 'rgba(255,255,255,0.25)',
+                    borderRadius: '8px',
+                    padding: '1px 7px',
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.02em',
+                  }}>Modified</span>
+                )}
+              </button>
+
+              {fbStatus === 'submitting' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
+                  <span className="spinner" style={{ width: '16px', height: '16px' }} />
+                  <span>Saving...</span>
+                </div>
+              )}
+            </div>
+
+            {/* Feedback message */}
+            {fbMsg && (
+              <div style={{
+                marginTop: '16px',
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: fbStatus === 'error' ? '#fef2f2' : '#f0fdf4',
+                border: `1px solid ${fbStatus === 'error' ? '#fecaca' : '#bbf7d0'}`,
+                color: fbStatus === 'error' ? '#dc2626' : '#16a34a',
+                fontSize: '0.88rem',
+                fontWeight: 600,
+              }}>
+                {fbMsg}
               </div>
             )}
           </div>
@@ -559,26 +1362,59 @@ export default function EventSimulator() {
                 <div className="metric-item">
                   <span className="metric-lbl">Direct (Blocked)</span>
                   <span className="metric-val" style={{ color: 'var(--color-red)' }}>
-                    {simData.diversion_plan.normal_route.duration_mins}m
-                  </span>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
                     {simData.diversion_plan.normal_route.distance_km} km
                   </span>
                 </div>
-                <div className="metric-item">
-                  <span className="metric-lbl">Via {simData.diversion_plan.alternate_corridor || 'Alternate'}</span>
-                  <span className="metric-val" style={{ color: 'var(--color-green)' }}>
-                    {simData.diversion_plan.diverted_route?.duration_mins || 'n/a'}m
-                  </span>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    {simData.diversion_plan.diverted_route?.distance_km || 'n/a'} km
-                  </span>
-                </div>
+                {showDiversion ? (
+                  <div className="metric-item">
+                    <span className="metric-lbl">Via {simData.diversion_plan.alternate_corridor || 'Alternate'}</span>
+                    <span className="metric-val" style={{ color: 'var(--color-green)' }}>
+                      {simData.diversion_plan.diverted_route?.distance_km || 'n/a'} km
+                    </span>
+                  </div>
+                ) : (
+                  <div className="metric-item" style={{ justifyContent: 'center', alignItems: 'center', background: '#f8f9fa' }}>
+                    <span className="metric-lbl" style={{ marginBottom: '10px' }}>Alternate Route</span>
+                    <button
+                      onClick={() => setShowDiversion(true)}
+                      style={{
+                        background: 'linear-gradient(150deg, #10b981, #059669)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '10px',
+                        padding: '10px 20px',
+                        fontSize: '0.92rem',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
+                        transition: 'all 0.2s ease',
+                        width: '85%',
+                        textAlign: 'center'
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 6px 18px rgba(16, 185, 129, 0.35)';
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.2)';
+                      }}
+                    >
+                      <span>🧭 Show Route</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {simData.diversion_plan.time_penalty_mins !== null && (
+              {showDiversion && simData.diversion_plan.diverted_route && (
                 <div style={{ fontSize: '0.88rem', fontWeight: 700, margin: '5px 0' }}>
-                  Time penalty: <span style={{ color: 'var(--color-red)' }}>+{simData.diversion_plan.time_penalty_mins} min</span>
+                  Distance penalty: <span style={{ color: 'var(--color-red)' }}>
+                    +{((simData.diversion_plan.diverted_route.distance_km || 0) - simData.diversion_plan.normal_route.distance_km).toFixed(2)} km
+                  </span>
                   <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}> (bypass coordinates centered on alternate corridor)</span>
                 </div>
               )}

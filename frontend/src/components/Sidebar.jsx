@@ -5,7 +5,7 @@ export default function Sidebar({ activeTab, setActiveTab, isCollapsed, setIsCol
     { id: 'risk-intelligence', label: 'Risk Intelligence', icon: '🗺️' },
     { id: 'simulator', label: 'Event Simulator', icon: '🔮' },
     { id: 'copilot', label: 'AI Copilot', icon: '💬' },
-    { id: 'learning', label: 'Learning Loop', icon: '📈' },
+    { id: 'learning', label: 'Post-Event Learning', icon: '📈' },
   ];
 
   return (
@@ -37,16 +37,6 @@ export default function Sidebar({ activeTab, setActiveTab, isCollapsed, setIsCol
 
       {/* Sidebar Footer */}
       <div className="sidebar-footer">
-        <div className="footer-card">
-          <div className="footer-card-inner">
-            <span className="footer-icon">🚖</span>
-            <div className="footer-text">
-              <span className="footer-lbl">Powered by</span>
-              <span className="footer-val">Namma Yatri</span>
-            </div>
-          </div>
-        </div>
-
         <button
           className="sidebar-toggle-btn"
           onClick={() => setIsCollapsed(!isCollapsed)}

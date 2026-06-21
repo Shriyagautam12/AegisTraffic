@@ -254,9 +254,10 @@ if "sim_pred" in st.session_state:
                     dplan = recommender.diversion_plan(ev, origin, dest)
                     if dplan.get("available") and dplan.get("diverted_route"):
                         dc1, dc2 = st.columns(2)
-                        dc1.markdown(metric_card(f"{dplan['normal_route']['duration_mins']:.0f}m", "Direct (blocked)", "#fca5a5"), unsafe_allow_html=True)
-                        dc2.markdown(metric_card(f"{dplan['diverted_route']['duration_mins']:.0f}m", f"Via {dplan['alternate_corridor']}", "#86efac"), unsafe_allow_html=True)
-                        st.caption(f"Time penalty: +{dplan['time_penalty_mins']:.0f} min")
+                        dc1.markdown(metric_card(f"{dplan['normal_route']['distance_km']:.2f} km", "Direct (blocked)", "#fca5a5"), unsafe_allow_html=True)
+                        dc2.markdown(metric_card(f"{dplan['diverted_route']['distance_km']:.2f} km", f"Via {dplan['alternate_corridor']}", "#86efac"), unsafe_allow_html=True)
+                        penalty_dist = dplan['diverted_route']['distance_km'] - dplan['normal_route']['distance_km']
+                        st.caption(f"Distance penalty: +{penalty_dist:.2f} km")
                         st_folium(viz.diversion_map(origin, dest, dplan), height=380, returned_objects=[])
                     else:
                         st.warning("OSRM unreachable right now.")

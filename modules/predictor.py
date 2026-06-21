@@ -59,6 +59,7 @@ class ImpactPredictor:
           is_planned, planned_duration_hrs
         """
         cause    = norm_cat(event.get("event_cause")) or "others"
+        category = norm_cat(event.get("event_category")) or ""
         corridor = event.get("corridor") or "Non-corridor"
         zone     = event.get("zone")
         veh_type = norm_cat(event.get("veh_type")) or "others"
@@ -71,7 +72,18 @@ class ImpactPredictor:
         road_closure = 1 if event.get("requires_road_closure") else 0
 
         # Scored features (domain knowledge from EDA) — case-insensitive lookups
-        cause_score   = CAUSE_SEVERITY_SCORE_NORM.get(cause, 1)
+        if cause in CAUSE_SEVERITY_SCORE_NORM:
+            cause_score = CAUSE_SEVERITY_SCORE_NORM[cause]
+        else:
+            if category == "planned_event":
+                cause_score = 3.0
+            elif category == "infrastructure_hazards":
+                cause_score = 3.0
+            elif category == "traffic_incidents":
+                cause_score = 1.5
+            else:
+                cause_score = 1.0
+
         corridor_tier = CORRIDOR_RISK_TIER_NORM.get(norm_cat(corridor), 1)
         veh_risk      = VEH_RISK_SCORE_NORM.get(veh_type, 1)
 

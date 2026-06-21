@@ -74,13 +74,26 @@ class SimilarEventEngine:
             PEAK_HOURS,
         )
         cause    = norm_cat(event.get("event_cause")) or "others"
+        category = norm_cat(event.get("event_category")) or ""
         corridor = norm_cat(event.get("corridor")) or "non-corridor"
         veh_type = norm_cat(event.get("veh_type")) or "others"
         hour     = int(event.get("hour", 12))
         dow      = int(event.get("day_of_week", 0))
 
+        if cause in CAUSE_SEVERITY_SCORE_NORM:
+            cause_score = CAUSE_SEVERITY_SCORE_NORM[cause]
+        else:
+            if category == "planned_event":
+                cause_score = 3.0
+            elif category == "infrastructure_hazards":
+                cause_score = 3.0
+            elif category == "traffic_incidents":
+                cause_score = 1.5
+            else:
+                cause_score = 1.0
+
         row = {
-            "cause_score":      CAUSE_SEVERITY_SCORE_NORM.get(cause, 1),
+            "cause_score":      cause_score,
             "corridor_tier":    CORRIDOR_RISK_TIER_NORM.get(corridor, 1),
             "veh_risk":         VEH_RISK_SCORE_NORM.get(veh_type, 1),
             "hour":             hour,
