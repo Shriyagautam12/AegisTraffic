@@ -15,3 +15,5 @@ google-generativeai
 sentence-transformers
 faiss-cpu
 python-dotenv
+fastapi
+uvicorn
