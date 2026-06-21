@@ -3,6 +3,7 @@ Shared constants for AegisTraffic.
 Keeps feature definitions consistent between training and inference.
 """
 
+import os
 from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
@@ -18,7 +19,9 @@ ENCODERS_PATH       = MODELS_DIR / "encoders.joblib"
 METADATA_PATH       = MODELS_DIR / "model_metadata.joblib"
 
 # Post-event learning store (Module 7)
-LEARNING_DB_PATH    = DATA_DIR / "learning_log.db"
+# In production (Render), DB_PATH env var points to the persistent disk mount.
+# In development it falls back to data/learning_log.db
+LEARNING_DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "learning_log.db")))
 
 # ── ML feature set (must match data_pipeline.get_feature_matrix) ───────────────
 FEATURE_COLS = [

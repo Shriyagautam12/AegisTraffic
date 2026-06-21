@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: aegistraffic
+    env: python
+    region: singapore        # closest to Bengaluru
+    plan: free
+    buildCommand: >
+      cd frontend && npm install && npm run build && cd .. &&
+      pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false          # enter this manually in the Render dashboard
+      - key: DB_PATH
+        value: /data/learning_log.db
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    disk:
+      name: aegistraffic-learning-db
+      mountPath: /data
+      sizeGB: 1

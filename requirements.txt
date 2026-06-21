@@ -16,4 +16,5 @@ sentence-transformers
 faiss-cpu
 python-dotenv
 fastapi
-uvicorn
+uvicorn[standard]
+python-multipart

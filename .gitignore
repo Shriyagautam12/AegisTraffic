@@ -22,10 +22,11 @@ env/
 data/*.xlsx
 data/*.csv
 data/*.parquet
+data/*.db
 
-# Trained models (large binaries)
-models/*.pkl
-models/*.joblib
+# Trained models (large binaries — excluded from git LFS, keep .joblib for deploy)
+# models/*.pkl
+# models/*.joblib
 models/*.cbm
 
 # OS
