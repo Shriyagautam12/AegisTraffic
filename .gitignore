@@ -18,11 +18,11 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# Data files (too large for git)
-data/*.xlsx
+# Data files (too large for git — except dataset.xlsx which is needed for deployment)
 data/*.csv
 data/*.parquet
 data/*.db
+
 
 # Trained models (large binaries — excluded from git LFS, keep .joblib for deploy)
 # models/*.pkl
