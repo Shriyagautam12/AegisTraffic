@@ -7,7 +7,7 @@ below but only imported when Streamlit is available (legacy pages).
 """
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 
 # ── Engine loader (used by main.py / FastAPI) ────────────────────────────────

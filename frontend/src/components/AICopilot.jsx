@@ -24,7 +24,7 @@ export default function AICopilot() {
   // Initial ping to check API and Mode
   useEffect(() => {
     // Run a dummy quick check or default to Gemini live
-    setCopilotMode('Gemini (live)');
+    setCopilotMode('Aegis AI (live)');
   }, []);
 
   // Send message handler
@@ -115,22 +115,29 @@ export default function AICopilot() {
               </div>
             )}
 
-            {chatHistory.map((turn, idx) => (
-              <React.Fragment key={idx}>
-                {turn.type === 'user' ? (
-                  <div className="chat-bubble-user">{turn.content}</div>
-                ) : (
-                  <>
-                    <div className="chat-bubble-ai">{turn.content}</div>
-                    {turn.used && (
-                      <div className="chat-bubble-meta">
-                        🔎 {turn.source} · grounded in: {turn.used}
-                      </div>
-                    )}
-                  </>
-                )}
-              </React.Fragment>
-            ))}
+            {chatHistory.map((turn, idx) => {
+              // Basic markdown parser for bolding
+              const formatText = (text) => {
+                if (!text) return null;
+                const parts = text.split(/(\*\*.*?\*\*)/g);
+                return parts.map((part, i) => {
+                  if (part.startsWith('**') && part.endsWith('**')) {
+                    return <strong key={i} style={{ color: 'var(--color-green)' }}>{part.slice(2, -2)}</strong>;
+                  }
+                  return part;
+                });
+              };
+
+              return (
+                <React.Fragment key={idx}>
+                  {turn.type === 'user' ? (
+                    <div className="chat-bubble-user">{turn.content}</div>
+                  ) : (
+                    <div className="chat-bubble-ai">{formatText(turn.content)}</div>
+                  )}
+                </React.Fragment>
+              );
+            })}
 
             {loading && (
               <div className="chat-bubble-ai" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px' }}>

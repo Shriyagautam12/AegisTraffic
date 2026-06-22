@@ -77,6 +77,19 @@ export default function RiskIntelligence({ overviewData }) {
     // Clear previous markers/shapes
     layersGroupRef.current.clearLayers();
 
+    const formatHHMM = (minutes) => {
+      if (!minutes) return '00:00';
+      const totalHrs = Math.floor(minutes / 60);
+      const mins = Math.floor(minutes % 60);
+      const pad = (num) => String(num).padStart(2, '0');
+      
+      if (totalHrs >= 24) {
+        const days = Math.floor(totalHrs / 24);
+        return `${days}d`;
+      }
+      return `${pad(totalHrs)}:${pad(mins)}`;
+    };
+
     // 1. Draw Heatmap (leaflet.heat canvas)
     if (layerType === 'Heatmap + Pins' || layerType === 'Heatmap only') {
       const heatPoints = incidents
@@ -115,7 +128,7 @@ export default function RiskIntelligence({ overviewData }) {
           tierName = 'High frequency';
         }
 
-        const medianTxt = j.median_closure_mins ? `${Math.round(j.median_closure_mins)} min` : 'n/a';
+        const medianTxt = j.median_closure_mins ? formatHHMM(j.median_closure_mins) : 'n/a';
 
         L.circleMarker([j.lat, j.lon], {
           radius: 5,
@@ -143,7 +156,7 @@ export default function RiskIntelligence({ overviewData }) {
       chronic.forEach(c => {
         if (!c.lat || !c.lon) return;
 
-        const medianTxt = c.median_closure_mins ? `${Math.round(c.median_closure_mins)} min` : 'n/a';
+        const medianTxt = c.median_closure_mins ? formatHHMM(c.median_closure_mins) : 'n/a';
 
         const icon = L.divIcon({
           className: "",
@@ -173,14 +186,14 @@ export default function RiskIntelligence({ overviewData }) {
   const timeDisplay = activity ? activity.time_display : 'Fri 23:46';
 
   const radius = 70;
-  const stroke = 12;
+  const stroke = 8;
   const normalizedRadius = radius - stroke * 2;
   const circumference = normalizedRadius * 2 * Math.PI;
   const strokeDashoffset = circumference - (pct * circumference);
 
   // Gauge color based on level
   const gaugeColor =
-    level === 'HIGH' ? '#d6453b' :
+    level === 'HIGH' ? '#e74c3c' :
       level === 'MODERATE' ? '#e8932e' : '#2f9e57';
 
   // Format table minutes
@@ -214,15 +227,21 @@ export default function RiskIntelligence({ overviewData }) {
     '#fcd34d', '#fca5a5', '#93c5fd', '#3b82f6'
   ];
 
+  const donutRadius = 80;
+  const donutCircumference = 2 * Math.PI * donutRadius;
+
   const donutSlices = causes.map((c, i) => {
     const percent = totalCauseCount > 0 ? (c.count / totalCauseCount) * 100 : 0;
-    const startAngle = accumulatedPercent * 3.6; // 3.6 deg per %
-    const sliceAngle = percent * 3.6;
+    const sliceLength = (percent * donutCircumference) / 100;
+    const startOffset = (accumulatedPercent / 100) * donutCircumference;
+    
     accumulatedPercent += percent;
 
-    // SVG dash calculations
-    const dashArray = `${(percent * circumference) / 100} ${circumference}`;
-    const dashOffset = circumference - ((startAngle / 360) * circumference);
+    // The gap in dashArray must be exactly the rest of the circumference so the pattern length is 1 circumference.
+    const dashArray = `${sliceLength} ${Math.max(0, donutCircumference - sliceLength)}`;
+    
+    // We shift the start of the dash backward by startOffset
+    const dashOffset = donutCircumference - startOffset;
 
     return {
       cause: c.cause,
@@ -238,7 +257,6 @@ export default function RiskIntelligence({ overviewData }) {
     <div className="page-container">
       {/* Title */}
       <div className="page-title-banner">
-        <div className="page-title-icon">🗺️</div>
         <div className="page-title-info">
           <h1 className="page-title">Risk Intelligence</h1>
           <span className="page-subtitle">Where Bengaluru chokes — and when.</span>
@@ -267,15 +285,15 @@ export default function RiskIntelligence({ overviewData }) {
         </div>
 
         {/* Right column: Activity Gauge + Map layer selection */}
-        <div className="flex-column-gap-10" style={{ gap: '20px' }}>
+        <div className="flex-column-gap-10" style={{ gap: '20px', height: '100%' }}>
           {/* Activity Gauge */}
           <div className="glass-card">
             <div className="card-title card-title-border">Activity Level Now</div>
             <div className="gauge-outer">
               <div className="gauge-svg-wrap">
-                <svg width="150" height="150" style={{ transform: 'rotate(-90deg)' }}>
+                <svg width="150" height="150" style={{ transform: 'rotate(-90deg)', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.05))' }}>
                   <circle
-                    stroke="#ededed"
+                    stroke="#f1f3f5"
                     fill="transparent"
                     strokeWidth={stroke}
                     r={normalizedRadius}
@@ -292,13 +310,13 @@ export default function RiskIntelligence({ overviewData }) {
                     r={normalizedRadius}
                     cx="75"
                     cy="75"
-                    style={{ transition: 'stroke-dashoffset 0.5s ease-in-out' }}
+                    style={{ transition: 'stroke-dashoffset 1s ease-out' }}
                   />
                 </svg>
                 <div className="gauge-inner-content">
-                  <span className="gauge-pct-val" style={{ color: gaugeColor }}>
+                  <div className="gauge-pct-val" style={{ color: gaugeColor }}>
                     {Math.round(pct * 100)}<span className="gauge-pct-sign">%</span>
-                  </span>
+                  </div>
                   <span className="gauge-lbl-level" style={{ color: gaugeColor }}>{level}</span>
                 </div>
               </div>
@@ -308,9 +326,9 @@ export default function RiskIntelligence({ overviewData }) {
           </div>
 
           {/* Map Layer Option Selection */}
-          <div className="glass-card">
+          <div className="glass-card" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
             <div className="card-title card-title-border">Map Layer</div>
-            <div className="control-options">
+            <div className="control-options" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <div className="radio-group">
                 {['Heatmap + Pins', 'Heatmap only', 'Junction pins only'].map((opt) => (
                   <label
@@ -420,7 +438,7 @@ export default function RiskIntelligence({ overviewData }) {
                 <tr key={chr.junction}>
                   <td className="table-cell-bold">{chr.junction}</td>
                   <td>{chr.incident_count}</td>
-                  <td>{formatHHMMSS(chr.median_closure_mins)}</td>
+                  <td><span className="clearance-badge">{formatHHMMSS(chr.median_closure_mins)}</span></td>
                 </tr>
               ))}
             </tbody>

@@ -37,22 +37,22 @@ export default function App() {
   };
 
   return (
-    <div className="app-container">
-      {/* Collabsible Sidebar */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        isCollapsed={isSidebarCollapsed}
-        setIsCollapsed={setIsSidebarCollapsed}
-      />
+    <div className="app-container" style={{ flexDirection: 'column' }}>
+      {/* Dynamic IST Top Header */}
+      <Header isCollapsed={isSidebarCollapsed} setIsCollapsed={setIsSidebarCollapsed} />
 
-      {/* Main Container */}
-      <div className="main-content">
-        {/* Dynamic IST Top Header */}
-        <Header />
+      {/* Main Body */}
+      <div className="app-body" style={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
+        {/* Collabsible Sidebar */}
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          isCollapsed={isSidebarCollapsed}
+          setIsCollapsed={setIsSidebarCollapsed}
+        />
 
-        {/* Dynamic viewport view */}
-        <div style={{ flexGrow: 1, overflowY: 'auto' }}>
+        {/* Main Container */}
+        <div className="main-content">
           {renderActiveView()}
         </div>
       </div>

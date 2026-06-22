@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { TrendingUp, BarChart2, Shield, AlertTriangle, Car, Truck, Monitor, Info } from 'lucide-react';
 
 export default function LearningLoop() {
   const [learningData, setLearningData] = useState(null);
@@ -57,7 +58,7 @@ export default function LearningLoop() {
     })
       .then(res => res.json())
       .then(data => {
-        const isCorrect = data.severity_correct ? '✅ correct' : '❌ wrong';
+        const isCorrect = data.severity_correct ? 'Correct' : 'Wrong';
         setFeedback(`Recorded outcome for prediction #${data.prediction_id} · Severity is ${isCorrect} · Duration error: ${Math.round(data.duration_error_mins)} min`);
         setSubmitting(false);
         fetchLearningData();
@@ -65,7 +66,7 @@ export default function LearningLoop() {
       .catch(err => {
         console.error("Error recording outcome: ", err);
         setSubmitting(false);
-        setFeedback("❌ Failed to record outcome.");
+        setFeedback("Failed to record outcome.");
       });
   };
 
@@ -89,7 +90,7 @@ export default function LearningLoop() {
     if (scatterData.length === 0) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '280px', color: 'var(--text-muted)' }}>
-          <span>📊</span>
+          <BarChart2 size={32} color="#94a3b8" />
           <span style={{ fontSize: '0.85rem', marginTop: '10px' }}>No outcome data yet. Approve or record deployments from the Event Simulator to populate this chart.</span>
         </div>
       );
@@ -178,11 +179,11 @@ export default function LearningLoop() {
 
   // ── Comparative Analysis ──────────────────────────────────────────────────────
   const RESOURCE_FIELDS = [
-    { key: 'officers', label: 'Officers', predKey: 'pred_officers', actualKey: 'actual_officers', icon: '👮', color: 'var(--color-blue)' },
-    { key: 'barricades', label: 'Barricades', predKey: 'pred_barricades', actualKey: 'actual_barricades', icon: '🚧', color: 'var(--color-gold-start)' },
-    { key: 'patrol_jeeps', label: 'Patrol Jeeps', predKey: 'pred_patrol_jeeps', actualKey: 'actual_patrol_jeeps', icon: '🚔', color: 'var(--color-teal)' },
-    { key: 'tow_vehicles', label: 'Tow Vehicles', predKey: 'pred_tow_vehicles', actualKey: 'actual_tow_vehicles', icon: '🚛', color: 'var(--color-red)' },
-    { key: 'command_vans', label: 'Command Vans', predKey: 'pred_command_vans', actualKey: 'actual_command_vans', icon: '📡', color: 'var(--color-purple)' },
+    { key: 'officers', label: 'Officers', predKey: 'pred_officers', actualKey: 'actual_officers', icon: <Shield size={14}/>, color: 'var(--color-blue)' },
+    { key: 'barricades', label: 'Barricades', predKey: 'pred_barricades', actualKey: 'actual_barricades', icon: <AlertTriangle size={14}/>, color: 'var(--color-gold-start)' },
+    { key: 'patrol_jeeps', label: 'Patrol Jeeps', predKey: 'pred_patrol_jeeps', actualKey: 'actual_patrol_jeeps', icon: <Car size={14}/>, color: 'var(--color-teal)' },
+    { key: 'tow_vehicles', label: 'Tow Vehicles', predKey: 'pred_tow_vehicles', actualKey: 'actual_tow_vehicles', icon: <Truck size={14}/>, color: 'var(--color-red)' },
+    { key: 'command_vans', label: 'Command Vans', predKey: 'pred_command_vans', actualKey: 'actual_command_vans', icon: <Monitor size={14}/>, color: 'var(--color-purple)' },
   ];
 
   const DiffBadge = ({ pred, actual }) => {
@@ -221,7 +222,7 @@ export default function LearningLoop() {
           gap: '8px',
           alignItems: 'flex-start',
         }}>
-          <span style={{ fontSize: '1.5rem' }}>🤖</span>
+          <Info size={28} color="#3b82f6" />
           <strong>No operational outcomes recorded yet.</strong>
           <span>Go to the <strong>Event Simulator</strong> tab, generate a prediction, then click <em>"Approve Suggested Plan"</em> or <em>"Record Custom Deployment"</em> to start feeding the learning system.</span>
         </div>
@@ -319,7 +320,7 @@ export default function LearningLoop() {
               {/* Duration comparison */}
               {(row.pred_duration != null || row.actual_duration != null) && (
                 <div style={{ marginTop: '12px', display: 'flex', gap: '12px', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  <span>⏱ Duration:</span>
+                  <span style={{ fontWeight: 600 }}>Duration:</span>
                   <span>Predicted <strong>{row.pred_duration != null ? `${Math.round(row.pred_duration)}m` : '—'}</strong></span>
                   <span>→</span>
                   <span>Actual <strong>{row.actual_duration != null ? `${Math.round(row.actual_duration)}m` : '—'}</strong></span>
@@ -347,7 +348,9 @@ export default function LearningLoop() {
     <div className="page-container">
       {/* Banner */}
       <div className="page-title-banner">
-        <div className="page-title-icon" style={{ backgroundColor: '#e0f2fe', color: '#0369a1' }}>📈</div>
+        <div className="page-title-icon" style={{ backgroundColor: '#e0f2fe', color: '#0369a1' }}>
+          <TrendingUp size={24} strokeWidth={2.5} />
+        </div>
         <div className="page-title-info">
           <h1 className="page-title">Post-Event Learning</h1>
           <span className="page-subtitle">Every prediction is logged, compared to reality, and used to self-correct over time.</span>
@@ -385,42 +388,10 @@ export default function LearningLoop() {
         </div>
       </div>
 
-      {/* Grid: Corrections and Scatter Plot */}
-      <div className="learning-layout">
-        {/* Corrections list */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="card-title card-title-border">🧠 Learned Corridor Corrections</div>
-
-          <div style={{ flexGrow: 1, overflowY: 'auto', maxHeight: '310px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {corrections.length > 0 ? (
-              <>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '10px', display: 'inline-block' }}>
-                  Where the model has learned to adjust its duration estimates from observed reality.
-                </span>
-                {corrections.slice(0, 10).map((item) => {
-                  const direction = item.correction_factor > 1 ? '▲ longer' : '▼ shorter';
-                  return (
-                    <div key={item.corridor} className="learned-correction-item">
-                      <span className="correction-name">{item.corridor.replace('_', ' ')}</span>
-                      <div className="text-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span className="correction-ratio">×{item.correction_factor.toFixed(2)}</span>
-                        <span className="correction-dir">({direction} than predicted)</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
-            ) : (
-              <div style={{ padding: '24px', background: '#eff6ff', borderRadius: '12px', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: '0.88rem', lineHeight: '1.4' }}>
-                🧠 <strong>No corrections learned yet</strong> — needs ≥5 closed outcomes per corridor. Approve plans on the Simulator to watch the system learn.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Scatter Plot */}
-        <div className="glass-card">
-          <div className="card-title card-title-border">Predicted vs Actual (Duration)</div>
+      {/* Scatter Plot */}
+      <div className="glass-card" style={{ maxWidth: '800px', margin: '0 auto', width: '100%' }}>
+        <div className="card-title card-title-border" style={{ borderColor: '#e2e8f0' }}>Predicted vs Actual (Duration)</div>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
           {renderScatterPlot()}
         </div>
       </div>
@@ -428,7 +399,7 @@ export default function LearningLoop() {
       {/* ── Comparative Analysis ──────────────────────────────────────────────── */}
       <div className="glass-card">
         <div className="card-title card-title-border" style={{ borderColor: 'var(--color-purple)' }}>
-          🔬 Comparative Analysis — Predicted vs. Actually Deployed
+          Comparative Analysis — Predicted vs. Actually Deployed
         </div>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '20px' }}>
           A side-by-side breakdown of what the system recommended vs. what was actually deployed. 

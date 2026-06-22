@@ -352,3 +352,5 @@ if os.path.exists(frontend_dist):
     @app.exception_handler(404)
     def custom_404_handler(request, exc):
         return FileResponse(os.path.join(frontend_dist, "index.html"))
+
+# Trigger restart

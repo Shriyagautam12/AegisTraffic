@@ -1,23 +1,15 @@
-import React from 'react';
+import { Map, PlayCircle, MessageSquare, TrendingUp } from 'lucide-react';
 
-export default function Sidebar({ activeTab, setActiveTab, isCollapsed, setIsCollapsed }) {
+export default function Sidebar({ activeTab, setActiveTab, isCollapsed }) {
   const navItems = [
-    { id: 'risk-intelligence', label: 'Risk Intelligence', icon: '🗺️' },
-    { id: 'simulator', label: 'Event Simulator', icon: '🔮' },
-    { id: 'copilot', label: 'AI Copilot', icon: '💬' },
-    { id: 'learning', label: 'Post-Event Learning', icon: '📈' },
+    { id: 'risk-intelligence', label: 'Risk Intelligence', icon: <Map size={18} /> },
+    { id: 'simulator', label: 'Event Simulator', icon: <PlayCircle size={18} /> },
+    { id: 'copilot', label: 'AI Copilot', icon: <MessageSquare size={18} /> },
+    { id: 'learning', label: 'Post-Event Learning', icon: <TrendingUp size={18} /> },
   ];
 
   return (
     <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
-      {/* Brand logo & info */}
-      <div className="brand-area">
-        <div className="brand-logo">🛡️</div>
-        <div className="brand-info">
-          <span className="brand-name">AegisTraffic</span>
-          <span className="brand-tag">Bengaluru Traffic Command</span>
-        </div>
-      </div>
 
       <div className="workspace-label">Workspace</div>
 
@@ -34,17 +26,6 @@ export default function Sidebar({ activeTab, setActiveTab, isCollapsed, setIsCol
           </button>
         ))}
       </nav>
-
-      {/* Sidebar Footer */}
-      <div className="sidebar-footer">
-        <button
-          className="sidebar-toggle-btn"
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-        >
-          {isCollapsed ? '>>' : '<<'}
-        </button>
-      </div>
     </div>
   );
 }

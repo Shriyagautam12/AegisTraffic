@@ -238,7 +238,6 @@ html {
   flex-direction: column;
   height: 100%;
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
   position: relative;
   z-index: 100;
 }
@@ -247,14 +246,12 @@ html {
   width: 72px;
 }
 
-/* Brand Area */
-.brand-area {
-  padding: 24px 20px;
+.sidebar-toggle-area {
+  padding: 10px 16px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid #f6f6f6;
-  white-space: nowrap;
+  height: 60px;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .brand-logo {
@@ -275,6 +272,7 @@ html {
   display: flex;
   flex-direction: column;
   transition: opacity 0.2s ease;
+  overflow: hidden;
 }
 
 .brand-name {
@@ -282,12 +280,36 @@ html {
   font-size: 1.15rem;
   color: var(--text-primary);
   line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brand-tag {
   font-size: 0.72rem;
   color: var(--text-muted);
   margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-toggle-btn-top {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle-btn-top:hover {
+  background: #f1f3f4;
+  color: var(--text-primary);
 }
 
 /* Workspace navigation */
@@ -309,6 +331,7 @@ html {
   padding: 0 10px;
   flex-grow: 1;
   overflow-y: auto;
+  margin-top: 10px;
 }
 
 .nav-item {
@@ -348,92 +371,20 @@ html {
   justify-content: center;
   width: 24px;
   flex-shrink: 0;
+  color: inherit;
 }
 
 .nav-text {
   transition: opacity 0.2s ease;
 }
 
-/* Sidebar Footer */
-.sidebar-footer {
-  padding: 15px;
-  border-top: 1px solid #f6f6f6;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.footer-card {
-  background: #f8f9fa;
-  border-radius: 12px;
-  padding: 10px 12px;
-  border: 1px solid #eeeeee;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.footer-card-inner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.footer-icon {
-  font-size: 1.2rem;
-  flex-shrink: 0;
-}
-
-.footer-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.footer-lbl {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.footer-val {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.sidebar-toggle-btn {
-  background: #f8f9fa;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  border-radius: 8px;
-  padding: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 0.8rem;
-  transition: all 0.2s ease;
-}
-
-.sidebar-toggle-btn:hover {
-  background: #eeeeee;
-  color: var(--text-primary);
-}
-
 /* Collapsed Hidden elements */
-.sidebar.collapsed .brand-info,
 .sidebar.collapsed .workspace-label,
-.sidebar.collapsed .nav-text,
-.sidebar.collapsed .footer-text {
+.sidebar.collapsed .nav-text {
   opacity: 0;
   width: 0;
   pointer-events: none;
   display: none;
-}
-
-.sidebar.collapsed .brand-area {
-  padding: 24px 14px;
-  justify-content: center;
 }
 
 .sidebar.collapsed .workspace-label {
@@ -445,19 +396,13 @@ html {
   padding: 12px 0;
 }
 
-.sidebar.collapsed .footer-card {
-  padding: 10px 0;
-  display: flex;
-  justify-content: center;
-}
-
 /* ── MAIN CONTENT ──────────────────────────────────────────────────────────── */
 .main-content {
   flex-grow: 1;
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow-y: scroll;
   position: relative;
 }
 
@@ -465,7 +410,7 @@ html {
 .top-header {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-color);
-  padding: 12px 30px;
+  padding: 0 30px 0 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -724,20 +669,26 @@ html {
 }
 
 .gauge-pct-val {
-  font-size: 2.4rem;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 2.2rem;
   font-weight: 800;
   line-height: 1;
+  letter-spacing: -1px;
 }
 
 .gauge-pct-sign {
-  font-size: 1.1rem;
+  font-size: 1.0rem;
+  font-weight: 700;
+  opacity: 0.6;
+  margin-left: 2px;
 }
 
 .gauge-lbl-level {
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  margin-top: 4px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  margin-top: 8px;
+  text-transform: uppercase;
 }
 
 .gauge-lbl-when {
@@ -817,11 +768,17 @@ html {
 .bar-chart-container {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  height: 380px;
+  gap: 16px;
+  max-height: 320px;
   overflow-y: auto;
+  padding-right: 4px;
+  /* Hide scrollbar for cleaner look */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-
+.bar-chart-container::-webkit-scrollbar {
+  display: none;
+}
 .chart-bar-row {
   display: flex;
   flex-direction: column;
@@ -924,31 +881,47 @@ html {
 }
 
 .custom-table th {
-  background: #f8f9fa;
-  padding: 14px 18px;
-  font-size: 0.78rem;
+  background: transparent;
+  padding: 16px 20px;
+  font-size: 0.8rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
+  letter-spacing: 1px;
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
 }
 
 .custom-table td {
-  padding: 14px 18px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  border-bottom: 1px solid #f6f6f6;
+  padding: 20px 20px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  transition: background-color 0.2s ease;
+}
+
+.custom-table tr {
+  transition: background-color 0.2s ease;
 }
 
 .custom-table tr:hover td {
-  background: #fcfcfc;
+  background: rgba(243, 244, 246, 0.6);
 }
 
 .table-cell-bold {
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.clearance-badge {
+  background: #f8fafc;
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 /* ── EVENT SIMULATOR VIEW ──────────────────────────────────────────────────── */
@@ -1158,7 +1131,8 @@ html {
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 520px;
+  flex-grow: 1;
+  min-height: 500px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 18px;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Shield, Menu } from 'lucide-react';
 
-export default function Header() {
+export default function Header({ isCollapsed, setIsCollapsed }) {
   const [timeStr, setTimeStr] = useState('');
 
   useEffect(() => {
@@ -39,7 +40,20 @@ export default function Header() {
   return (
     <header className="top-header">
       <div className="header-left">
-        <span className="header-tagline">Bengaluru City Traffic Police</span>
+        <button
+          className="sidebar-toggle-btn-top"
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          title="Toggle Sidebar"
+        >
+          <Menu size={20} />
+        </button>
+        <div className="brand-logo header-logo">
+          <Shield size={22} color="white" strokeWidth={2.5} />
+        </div>
+        <div className="brand-info">
+          <span className="brand-name">AegisTraffic</span>
+          <span className="brand-tag">Bengaluru Traffic Command</span>
+        </div>
       </div>
       <div className="header-right">
         <div className="header-time">{timeStr}</div>
